@@ -1,0 +1,33 @@
+# 1단계: 3명의 후보자 입력받기
+candidates = {}
+
+for i in range(3):
+    name = input()
+    candidates[name] = 0
+# 2단계: 10명의 투표 진행
+invalid_votes = 0
+for i in range(10):
+    vote = input()
+
+    if vote in candidates:
+        candidates[vote] +=1
+    else:
+        invalid_votes += 1
+
+# 3단계: 투표 결과 출력
+print(f"총 투표자: 10명")
+print(f"유효 투표: {10 - invalid_votes}표")
+print(f"무효 투표: {invalid_votes}표")
+# 4단계: 후보 별 득표 현황 출력
+for name, votes in candidates.items():
+    print(f"{name}: {votes}표")
+# 5단계: 당선자 찾기 및 출력
+max_votes = 0
+winner = ""
+
+for name, votes in candidates.items():
+    if votes > max_votes:
+        max_votes = votes
+        winner = name
+
+print(f"{winner} 후보가 당선되었습니다! (득표수: {max_votes}표)")
