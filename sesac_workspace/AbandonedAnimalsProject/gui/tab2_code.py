@@ -1,3 +1,118 @@
+# # =========================
+# # 3-2. 두 번째 탭: 유기 장소 패턴 분석 (지도 전체 데이터 기준)
+# # =========================
+# with tab2:
+#     st.header("지역별 유기동물 분포 지도")
+
+#     # 1. 시/도별 유기동물 수 집계 및 비율 계산 (이전 코드와 동일)
+#     province_counts = df['province'].value_counts().reset_index()
+    
+#     province_counts.columns = ['province', 'count']
+    
+#     total_animals = len(df)
+#     province_counts['percent'] = province_counts['count'] / total_animals * 100
+    
+
+#     # 2. 종별 개수 계산 (피벗 테이블)
+#     # df의 province와 upKindNm을 기준으로 각 province별 종 개수를 계산합니다.
+#     species_counts = df.pivot_table(
+#         index='province',
+#         columns='upKindNm',
+#         aggfunc='size',
+#         fill_value=0
+#     )
+#     # 컬럼 이름이 '개', '고양이', '기타' 등으로 되어 있다고 가정합니다.
+
+#     # 3. 데이터 병합
+#     # total_counts에 종별 개수 데이터를 province를 기준으로 left join합니다.
+#     # 이렇게 하면 province_counts에 있는 16개 행이 모두 유지됩니다.
+#     province_counts = province_counts.merge(
+#         species_counts, 
+#         on='province', 
+#         how='left'
+#     ).fillna(0) # merge 후 혹시라도 없는 종 데이터는 0으로 채웁니다.
+    
+#     # province_counts의 dtype을 int로 변환 (count 및 종별 카운트)
+#     cols_to_convert = ['count'] + list(species_counts.columns)
+#     for col in cols_to_convert:
+#         if col in province_counts.columns:
+#              # 데이터가 float으로 변환되었을 수 있으므로 int로 변환
+#             province_counts[col] = province_counts[col].astype(int) 
+
+# # 🔑 핵심 수정 2: 지도 좌표 매칭의 안전성을 위해 'province' 이름 순서로 명시적 정렬
+#     # 이 단계를 통해 'count'를 기준으로 한 초기 정렬(value_counts)이 해제됩니다.
+#     province_counts = province_counts.sort_values(by='province').reset_index(drop=True)
+    
+#     # 4. 지도 생성 및 마커 추가 (이전 코드와 동일)
+#     m = folium.Map(location=[36.5, 127.5], zoom_start=7)
+
+#     province_coords = {
+#         # ... (province_coords는 그대로 사용)
+#         "서울특별시": [37.5665, 126.9780],
+#         "부산광역시": [35.1796, 129.0756],
+#         "대구광역시": [35.8714, 128.6014],
+#         "인천광역시": [37.4563, 126.7052],
+#         "광주광역시": [35.1595, 126.8526],
+#         "대전광역시": [36.3504, 127.3845],
+#         "울산광역시": [35.5396, 129.3114],
+#         "세종특별자치시": [36.4800, 127.2890],
+#         "경기도": [37.4138, 127.5183],
+#         "강원특별자치도": [37.8228, 128.1555],
+#         "충청북도": [36.6357, 127.4910],
+#         "충청남도": [36.5184, 126.8000],
+#         "전북특별자치도": [35.8200, 127.1080],
+#         "전라남도": [34.8161, 126.4620],
+#         "경상북도": [36.4919, 128.8889],
+#         "경상남도": [35.3450, 128.4380],
+#         "제주특별자치도": [33.5000, 126.5312]
+#     }
+    
+#     # 마커 추가
+#     for idx, row in province_counts.iterrows():
+#         prov = row['province']
+        
+#         # ⚠️ 중요: province_counts에 있는 province가 province_coords에 없는 경우 스킵
+#         if prov not in province_coords:
+#             # st.warning(f"경고: {prov}의 좌표 정보가 누락되었습니다.") 
+#             continue 
+#         # print(row)
+#         # 팝업 텍스트에서 .get()을 사용하여 데이터 누락에 안전하게 대응
+#         popup_text = f"""
+#         <b>{prov}</b><br>
+#         총 유기동물 수: {row['count']} ({row['percent']:.1f}%)<br>
+#         강아지: {row.get('개', 0)}<br>
+#         고양이: {row.get('고양이', 0)}<br>
+#         기타: {row.get('기타', 0)}
+#         """
+        
+#         # 'count' 값이 0일 경우 반경이 너무 작아지므로 최소 반경을 설정
+#         radius = 10 + row['count'] / 500
+        
+#         folium.CircleMarker(
+#             location=province_coords[prov],
+#             radius=radius,
+#             color='blue',
+#             fill=True,
+#             fill_color='skyblue',
+#             fill_opacity=0.6,
+#             popup=folium.Popup(popup_text, max_width=300)
+#         ).add_to(m)
+    
+#     # 지도 표시
+#     st_folium(m, width=700, height=500)
+
+
+
+
+
+
+
+
+
+
+
+################################################################################################
+
 # =========================
 # 0. 라이브러리 불러오기
 # =========================
@@ -154,18 +269,23 @@ st.title("유기동물 데이터 대시보드")
 tab1, tab2, tab3 = st.tabs(["장소 패턴", "시기 분석", "동물 종류 & 품종"])
 
 # =========================
-# 탭3: 유기 동물 종류 & 품종 분석
+# 3-1. 첫 번째 탭: 동물 종류 & 품종 분석
 # =========================
+import altair as alt  # Altair 추가
+
 with tab3:
-    # st.header("유기 동물 종류 및 품종 분석")
+    st.header("유기 동물 종류 및 품종 분석")
 
-    # -------------------------
-    # 1행: 동물 종류별 수 그래프
-    # -------------------------
-    col_graph = st.columns(1)[0]  # 한 열
-    col_graph.subheader("유기 동물 종류별 수")
+    # 좌측 그래프, 우측 리스트
+    col1, col2 = st.columns([1.5, 1])
 
-    # upKindNm -> kind_group 변환
+    # --------------------------------------------------
+# 📌 좌측: 동물 종류별 수 그래프 (Altair 버전)
+# --------------------------------------------------
+with col1:
+    st.subheader("유기 동물 종류별 수")
+
+    # 1) upKindNm 값을 '강아지 / 고양이 / 기타'로 변환
     def kind_group(kind):
         if kind == "개":
             return "강아지"
@@ -173,79 +293,94 @@ with tab3:
             return "고양이"
         else:
             return "기타"
+
     df["kind_group"] = df["upKindNm"].apply(kind_group)
 
-    # 그룹별 수 집계
+    # 2) 그룹별 수 집계
     kind_counts = df["kind_group"].value_counts().reset_index()
     kind_counts.columns = ["kind_group", "count"]
 
-    # Altair 차트
-    import altair as alt
+    # 3) Altair 바 차트 생성
     base = alt.Chart(kind_counts).encode(
-        x=alt.X("kind_group:N", axis=alt.Axis(labelAngle=0)),
+        x=alt.X("kind_group:N", axis=alt.Axis(labelAngle=0)),  # 카테고리 이름 그대로 표시
         y=alt.Y("count:Q")
     )
-    # 막대 폭 30으로 살짝 늘려서 가독성 확보
-    bar = base.mark_bar(size=150)
+
+    bar = base.mark_bar()
+
+    # 4) 막대 위 숫자 표시
     text = base.mark_text(
         align="center",
         baseline="bottom",
         dy=-2,
         fontSize=14
-    ).encode(text="count:Q")
-    chart = (bar + text).properties(height=280)
-    col_graph.altair_chart(chart, use_container_width=True)
+    ).encode(
+        text="count:Q"
+    )
 
-    # -------------------------
-    # 2행: 강아지/고양이 Top5 품종
-    # -------------------------
-    col_dog, col_cat = st.columns(2)
+    chart = (bar + text).properties(height=350)
 
-    # CSS 카드 스타일
-    card_style = """
-    <style>
-    .animal-card {
-        background: #ffffff;
-        border-radius: 15px;
-        padding: 18px 20px;
-        margin-bottom: 18px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        border-left: 7px solid #6C63FF;
-    }
-    .animal-title {
-        font-size: 20px;
-        font-weight: bold;
-        margin-bottom: 10px;
-    }
-    .breed-item {
-        font-size: 15px;
-        padding: 4px 0;
-    }
-    </style>
-    """
-    st.markdown(card_style, unsafe_allow_html=True)
+    st.altair_chart(chart, use_container_width=True)
 
-    # -------------------------
-    # 강아지 Top5
-    # -------------------------
-    col_dog.subheader("강아지 Top 5 품종")
-    dog_top5 = df[df["upKindNm"] == "개"]["kindNm"].value_counts().head(5)
-    dog_html = "<div class='animal-card'><div class='animal-title'>🐶 강아지 Top 5</div>"
-    for idx, (breed, count) in enumerate(dog_top5.items(), start=1):
-        dog_html += f"<div class='breed-item'>{idx}. {breed} — {count}건</div>"
-    dog_html += "</div>"
-    col_dog.markdown(dog_html, unsafe_allow_html=True)
 
-    # -------------------------
-    # 고양이 Top5
-    # -------------------------
-    col_cat.subheader("고양이 Top 5 품종")
-    cat_top5 = df[df["upKindNm"] == "고양이"]["kindNm"].value_counts().head(5)
-    cat_html = "<div class='animal-card'><div class='animal-title'>🐱 고양이 Top 5</div>"
-    for idx, (breed, count) in enumerate(cat_top5.items(), start=1):
-        cat_html += f"<div class='breed-item'>{idx}. {breed} — {count}건</div>"
-    cat_html += "</div>"
-    col_cat.markdown(cat_html, unsafe_allow_html=True)
+    # --------------------------------------------------
+    # 📌 우측: 강아지/고양이 품종 TOP3 – 카드 UI
+    # --------------------------------------------------
+    with col2:
+
+        # 카드 디자인용 CSS
+        card_style = """
+        <style>
+        .animal-card {
+            background: #ffffff;
+            border-radius: 15px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            border-left: 7px solid #6C63FF;
+        }
+        .animal-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .breed-item {
+            font-size: 15px;
+            padding: 4px 0;
+        }
+        </style>
+        """
+        st.markdown(card_style, unsafe_allow_html=True)
+
+        st.subheader("상위 품종 Top 3")
+
+        # 🔹 강아지 TOP 3
+        dog_top3 = df[df["upKindNm"] == "개"]["kindNm"].value_counts().head(3)
+
+        # 🔹 고양이 TOP 3
+        cat_top3 = df[df["upKindNm"] == "고양이"]["kindNm"].value_counts().head(3)
+
+        # ===========================
+        # 🐶 강아지 카드
+        # ===========================
+        dog_html = "<div class='animal-card'>"
+        dog_html += "<div class='animal-title'>🐶 강아지 TOP 3</div>"
+        for idx, (breed, count) in enumerate(dog_top3.items(), start=1):
+            dog_html += f"<div class='breed-item'>{idx}. {breed} — {count}건</div>"
+        dog_html += "</div>"
+
+        st.markdown(dog_html, unsafe_allow_html=True)
+
+        # ===========================
+        # 🐱 고양이 카드
+        # ===========================
+        cat_html = "<div class='animal-card'>"
+        cat_html += "<div class='animal-title'>🐱 고양이 TOP 3</div>"
+        for idx, (breed, count) in enumerate(cat_top3.items(), start=1):
+            cat_html += f"<div class='breed-item'>{idx}. {breed} — {count}건</div>"
+        cat_html += "</div>"
+
+        st.markdown(cat_html, unsafe_allow_html=True)
 
 
 
@@ -440,14 +575,14 @@ with tab1:
 
             
 # =========================
-# 3-3. 탭2: 유기 시기 분석 (월/계절 + KPI + 종합결론)
+# 3-3. 세 번째 탭: 유기 시기 분석 (대시보드형)
 # =========================
 with tab2:
-    st.header("📅 유기 시기 분석 대시보드")
+    st.header("📅 시기 분석 대시보드")
 
-    # ===============================
-    # 0) CSS: KPI 카드 + 인사이트 + 여백
-    # ===============================
+    # ======================================
+    # 🔵 0) CSS (KPI vs 그래프 맞춤 + LNB 정렬)
+    # ======================================
     st.markdown("""
         <style>
             /* KPI 카드 */
@@ -455,190 +590,179 @@ with tab2:
                 padding: 16px;
                 border-radius: 12px;
                 background: #ffffff;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                box-shadow: 0 3px 8px rgba(0,0,0,0.06);
                 text-align: center;
-                font-family: Malgun Gothic;
-                color: #333;
-                margin-bottom: 15px;
+                border-left: 6px solid #4e8cff;
             }
-            .kpi-title {
-                font-size:13px; 
-                color:#555;
-            }
-            .kpi-value {
-                font-size:20px; 
-                font-weight:700; 
-                margin-top:6px;
-            }
-            /* 좌측 테두리 색상 */
-            .kpi-dog { border-left: 6px solid #4e8cff; }
-            .kpi-cat { border-left: 6px solid #2ecc71; }
+            .kpi-title { font-size:13px; color:#555; }
+            .kpi-value { font-size:20px; font-weight:700; margin-top:6px; }
 
-            /* 종합결론 영역 */
-            .insight-box {
+            /* KPI 아래 여백 추가 → 그래프 시작 위치 기준 */
+            .kpi-section {
+                margin-bottom: 40px;     /* 🔥 그래프 시작 지점 */
+            }
+
+            /* 좌측 LNB 스타일 */
+            .lnb-box {
                 padding: 16px;
-                border-radius: 12px;
-                background: #f8f9fa;
-                box-shadow: 0 3px 8px rgba(0,0,0,0.05);
-                font-size: 18px;
-                line-height: 1.6;
-                margin-bottom: 20px;
+                background-color: #f9f9f9;
+                border-radius: 10px;
+                border: 1px solid #ddd;
+                height: fit-content;
+            }
+
+            /* 🔥 LNB를 그래프 시작선에 맞춤 */
+            .lnb-align {
+                padding-top: 40px;  /* KPI가 아니라 그래프 기준으로 조절 */
+            }
+
+            /* 여백 제거 */
+            .stDateInput > div {
+                margin-bottom: 0 !important;
+                padding-bottom: 0 !important;
+            }
+            .block-container {
+                padding-top: 0rem !important;
             }
         </style>
     """, unsafe_allow_html=True)
 
-    # ===============================
-    # 1) 1행: 기간 필터 + 그래프 2개 (3열)
-    # ===============================
-    col1, col2, col3 = st.columns([1,1,1])
+    # ======================================
+    # LNB + 콘텐츠 (좌 25% : 우 75%)
+    # ======================================
+    lnb_col, content_col = st.columns([0.25, 0.75])
 
-    # --- 기간 필터 ---
-    with col1:
+    # --------------------------------------
+    # 🔵 좌측 LNB: 기간 설정 필터
+    # --------------------------------------
+    with lnb_col:
+        st.markdown('<div class="lnb-align">', unsafe_allow_html=True)
+
         st.subheader("🔧 기간 설정")
+
         start_date = st.date_input("시작 날짜", df["happenDt"].min())
-        end_date = st.date_input("종료 날짜", df["happenDt"].max())
+        end_date   = st.date_input("종료 날짜", df["happenDt"].max())
 
-    # 필터 적용
-    filtered_df = df[(df["happenDt"] >= pd.to_datetime(start_date)) & 
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --------------------------------------
+    # 🔵 날짜 필터 적용
+    # --------------------------------------
+    filtered_df = df[(df["happenDt"] >= pd.to_datetime(start_date)) &
                      (df["happenDt"] <= pd.to_datetime(end_date))].copy()
-    filtered_df = filtered_df[filtered_df['upKindNm'].isin(['개','고양이'])]
+
     filtered_df = filtered_df.sort_values(by="happenDt", ascending=True)
+    filtered_df = filtered_df[filtered_df['upKindNm'].isin(['개', '고양이'])]
 
-    # --- 월별 그래프 ---
-    with col2:
-        monthly_counts = filtered_df.groupby(['month','upKindNm']).size().reset_index(name='count')
-        fig1, ax1 = plt.subplots(figsize=(5,3))
-        sns.barplot(data=monthly_counts, x='month', y='count', hue='upKindNm',
-                    palette={'개':'skyblue','고양이':'lightgreen'}, ax=ax1)
-        ax1.set_title("월별 유기동물 발생 건수", fontsize=12)
-        st.pyplot(fig1)
+    # 월 & 계절 컬럼 생성
+    df['month'] = df['happenDt'].dt.month
+    filtered_df['month'] = filtered_df['happenDt'].dt.month
 
-    # --- 계절별 그래프 ---
-    with col3:
-        def get_season(m):
-            if m in [3,4,5]: return '봄'
-            elif m in [6,7,8]: return '여름'
-            elif m in [9,10,11]: return '가을'
-            else: return '겨울'
-        filtered_df['season'] = filtered_df['happenDt'].dt.month.apply(get_season)
-        season_order = ["봄","여름","가을","겨울"]
-        season_counts = filtered_df.groupby(['season','upKindNm']).size().reset_index(name='count')
-        season_counts['season'] = pd.Categorical(season_counts['season'], categories=season_order, ordered=True)
-        season_counts = season_counts.sort_values('season')
+    def get_season(m):
+        if m in [3, 4, 5]:   return '봄'
+        elif m in [6, 7, 8]: return '여름'
+        elif m in [9, 10, 11]: return '가을'
+        else: return '겨울'
 
-        fig2, ax2 = plt.subplots(figsize=(5,3))
-        sns.barplot(data=season_counts, x='season', y='count', hue='upKindNm',
-                    palette={'개':'skyblue','고양이':'lightgreen'}, ax=ax2)
-        ax2.set_title("계절별 유기동물 발생 건수", fontsize=12)
-        st.pyplot(fig2)
+    df['season'] = df['month'].apply(get_season)
+    filtered_df['season'] = filtered_df['month'].apply(get_season)
 
-    # ===============================
-    # 2) 2행: KPI 카드 5개 (강아지/고양이 색상 구분)
-    # ===============================
-    kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
+    # --------------------------------------
+    # 🔵 우측 콘텐츠 영역
+    # --------------------------------------
+    with content_col:
 
-    # KPI1: 총 유기동물 수
-    total_dog = len(filtered_df[filtered_df['upKindNm']=='개'])
-    total_cat = len(filtered_df[filtered_df['upKindNm']=='고양이'])
-    kpi_html = f"""
-        <div class="kpi-card kpi-dog">
-            <div class="kpi-title">총 유기동물 (강아지)</div>
-            <div class="kpi-value">{total_dog:,} 건</div>
-        </div>
-        <div class="kpi-card kpi-cat">
-            <div class="kpi-title">총 유기동물 (고양이)</div>
-            <div class="kpi-value">{total_cat:,} 건</div>
-        </div>
-    """
-    kpi_col1.markdown(kpi_html, unsafe_allow_html=True)
+        # ===============================
+        # 1) KPI 카드 (3개)
+        # ===============================
+        st.markdown('<div class="kpi-section">', unsafe_allow_html=True)
 
-    # KPI2: 최다 발생 월
-    dog_top_month = filtered_df[filtered_df['upKindNm']=='개']['month'].value_counts().idxmax() if total_dog>0 else None
-    cat_top_month = filtered_df[filtered_df['upKindNm']=='고양이']['month'].value_counts().idxmax() if total_cat>0 else None
-    kpi_html = f"""
-        <div class="kpi-card kpi-dog">
-            <div class="kpi-title">최다 발생 월 (강아지)</div>
-            <div class="kpi-value">{dog_top_month}월</div>
-        </div>
-        <div class="kpi-card kpi-cat">
-            <div class="kpi-title">최다 발생 월 (고양이)</div>
-            <div class="kpi-value">{cat_top_month}월</div>
-        </div>
-    """
-    kpi_col2.markdown(kpi_html, unsafe_allow_html=True)
+        kpi1, kpi2, kpi3 = st.columns(3)
 
-    # KPI3: 최다 발생 계절
-    dog_top_season = filtered_df[filtered_df['upKindNm']=='개']['season'].value_counts().idxmax() if total_dog>0 else None
-    cat_top_season = filtered_df[filtered_df['upKindNm']=='고양이']['season'].value_counts().idxmax() if total_cat>0 else None
-    kpi_html = f"""
-        <div class="kpi-card kpi-dog">
-            <div class="kpi-title">최다 발생 계절 (강아지)</div>
-            <div class="kpi-value">{dog_top_season}</div>
-        </div>
-        <div class="kpi-card kpi-cat">
-            <div class="kpi-title">최다 발생 계절 (고양이)</div>
-            <div class="kpi-value">{cat_top_season}</div>
-        </div>
-    """
-    kpi_col3.markdown(kpi_html, unsafe_allow_html=True)
+        with kpi1:
+            st.markdown(f"""
+                <div class="kpi-card">
+                    <div class="kpi-title">총 유기동물 수</div>
+                    <div class="kpi-value">{len(filtered_df):,} 건</div>
+                </div>
+            """, unsafe_allow_html=True)
 
-    # KPI4: 주로 유기되는 나이대
-    # '아기견/아기묘', '성견/성묘' 기준
-    def age_group(row):
-        age = row['age_months']
-        if pd.isna(age):
-            return None
-        if row['upKindNm']=='개':
-            return '아기견' if age<12 else '성견'
-        else:
-            return '아기묘' if age<12 else '성묘'
-    filtered_df['age_group'] = filtered_df.apply(age_group, axis=1)
+        with kpi2:
+            if len(filtered_df) > 0:
+                top_month = filtered_df['month'].value_counts().idxmax()
+                st.markdown(f"""
+                    <div class="kpi-card">
+                        <div class="kpi-title">최다 발생 월</div>
+                        <div class="kpi-value">{top_month}월</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
-    dog_age_top = filtered_df[filtered_df['upKindNm']=='개']['age_group'].value_counts().idxmax() if total_dog>0 else None
-    cat_age_top = filtered_df[filtered_df['upKindNm']=='고양이']['age_group'].value_counts().idxmax() if total_cat>0 else None
+        with kpi3:
+            if len(filtered_df) > 0:
+                top_season = filtered_df['season'].value_counts().idxmax()
+                st.markdown(f"""
+                    <div class="kpi-card">
+                        <div class="kpi-title">최다 발생 계절</div>
+                        <div class="kpi-value">{top_season}</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
-    kpi_html = f"""
-        <div class="kpi-card kpi-dog">
-            <div class="kpi-title">주로 유기되는 나이대 (강아지)</div>
-            <div class="kpi-value">{dog_age_top}</div>
-        </div>
-        <div class="kpi-card kpi-cat">
-            <div class="kpi-title">주로 유기되는 나이대 (고양이)</div>
-            <div class="kpi-value">{cat_age_top}</div>
-        </div>
-    """
-    kpi_col4.markdown(kpi_html, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # KPI5: 성별 분포 (M/F)
-    dog_sex = filtered_df[filtered_df['upKindNm']=='개']['sexCd'].value_counts()
-    cat_sex = filtered_df[filtered_df['upKindNm']=='고양이']['sexCd'].value_counts()
-    dog_sex_str = f"M:{dog_sex.get('M',0)} / F:{dog_sex.get('F',0)}"
-    cat_sex_str = f"M:{cat_sex.get('M',0)} / F:{cat_sex.get('F',0)}"
-    kpi_html = f"""
-        <div class="kpi-card kpi-dog">
-            <div class="kpi-title">성별 분포 (강아지)</div>
-            <div class="kpi-value">{dog_sex_str}</div>
-        </div>
-        <div class="kpi-card kpi-cat">
-            <div class="kpi-title">성별 분포 (고양이)</div>
-            <div class="kpi-value">{cat_sex_str}</div>
-        </div>
-    """
-    kpi_col5.markdown(kpi_html, unsafe_allow_html=True)
+        # ===============================
+        # 2) 그래프 1행 2열
+        # ===============================
+        graph_col1, graph_col2 = st.columns(2)
 
-    # ===============================
-    # 3) 3행: 종합결론 인사이트
-    # ===============================
-    insight_html = "<div class='insight-box'><b>종합결론:</b><br>"
+        # ----- 월별 그래프 -----
+        with graph_col1:
+            monthly_counts = (
+                filtered_df.groupby(['month', 'upKindNm'])
+                           .size()
+                           .reset_index(name='count')
+            )
 
-    if total_dog>0:
-        insight_html += f"🐶 강아지: 주로 {dog_age_top}이 많이 유기되고 있으며, 이는 입양 후 관리 부담이나 나이 관련 요인이 원인일 수 있습니다.<br>"
-    if total_cat>0:
-        insight_html += f"🐱 고양이: 주로 {cat_age_top}이 많이 유기되고 있으며, 이는 환경 변화 및 돌봄 부담 등이 원인일 수 있습니다.<br>"
+            fig1, ax1 = plt.subplots(figsize=(6, 3))
+            sns.barplot(
+                data=monthly_counts,
+                x='month', y='count', hue='upKindNm',
+                palette={'개': 'skyblue', '고양이': 'lightgreen'},
+                ax=ax1
+            )
+            ax1.set_title("월별 유기동물 발생 건수", fontsize=12)
+            st.pyplot(fig1)
 
-    insight_html += "</div>"
-    st.markdown(insight_html, unsafe_allow_html=True)
+        # ----- 계절별 그래프 -----
+        with graph_col2:
+            season_counts = (
+                filtered_df.groupby(['season', 'upKindNm'])
+                           .size()
+                           .reset_index(name='count')
+            )
+
+            season_order = ["봄", "여름", "가을", "겨울"]
+            season_counts['season'] = pd.Categorical(
+                season_counts['season'],
+                categories=season_order,
+                ordered=True
+            )
+            season_counts = season_counts.sort_values('season')
+
+            fig2, ax2 = plt.subplots(figsize=(6, 3))
+            sns.barplot(
+                data=season_counts,
+                x='season', y='count', hue='upKindNm',
+                palette={'개': 'skyblue', '고양이': 'lightgreen'},
+                ax=ax2
+            )
+            ax2.set_title("계절별 유기동물 발생 건수", fontsize=12)
+            st.pyplot(fig2)
 
 
 
 
+
+
+
+    
+    

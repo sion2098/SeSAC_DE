@@ -120,13 +120,13 @@ from dotenv import load_dotenv  # .env 파일에서 API 키 로드
 # =========================
 # 0-1. API 키 불러오기 (.env 파일 사용 가능)
 # =========================
-# load_dotenv()  # 필요 시 .env 파일에서 불러오기
-# API_KEY = os.getenv("api_key")  # 환경 변수에서 키 불러오기
+load_dotenv()  # 필요 시 .env 파일에서 불러오기
+API_KEY = os.getenv("api_key")  # 환경 변수에서 키 불러오기
 
 # =========================
 # 1. API 기본 정보
 # =========================
-API_KEY = "넣기"  # 반드시 본인 키 사용
+# API_KEY = "넣기"  # 반드시 본인 키 사용
 ENDPOINT = "https://apis.data.go.kr/1543061/abandonmentPublicService_v2/abandonmentPublic_v2"
 START_DATE = "20250101"  # 조회 시작일
 END_DATE = "20251203"    # 조회 종료일
@@ -274,7 +274,7 @@ print(df[['orgNm', 'province']].head())
 # =========================
 # 14. CSV 파일로 저장
 # =========================
-csv_filename = "abandoned_animals_2025.csv"
+csv_filename = "abandoned_animals_2025_1.csv"
 df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
 print(f"CSV 파일 저장 완료: {csv_filename}")
 
