@@ -1,0 +1,6 @@
+inp = input()
+arr = inp.split()
+print(arr)
+print(type(arr))
+print(arr[0])
+print(arr[3])
