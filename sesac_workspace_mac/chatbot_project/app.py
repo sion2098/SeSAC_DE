@@ -33,34 +33,36 @@ COUNTRY_MAP = {
 def list_txt_files(country_dir: str) -> list[str]:
     return sorted(glob.glob(os.path.join(country_dir, "*.txt")))
 
-def load_txt_documents(country_dir: str) -> list[Document]:
-    # 국가별 TXT
-    country_files = list_txt_files(country_dir)
-
-    # 공통 TXT (워킹홀리데이 제도 설명)
-    common_files = []
-    if os.path.isdir(COMMON_DIR):
-        common_files = list_txt_files(COMMON_DIR)
-
-    all_files = country_files + common_files
+def load_all_documents(base_dir: str) -> list[Document]:
+    """
+    data/ 아래의 common + 모든 국가 폴더의 TXT를 전부 로딩
+    """
     docs = []
 
-    for fp in all_files:
-        with open(fp, "r", encoding="utf-8") as f:
-            text = f.read().strip()
+    for root, dirs, files in os.walk(base_dir):
+        for fname in files:
+            if not fname.endswith(".txt"):
+                continue
 
-        docs.append(
-            Document(
-                page_content=text,
-                metadata={
-                    "source_file": os.path.basename(fp),
-                    "source_type": "common"
-                    if fp.startswith(COMMON_DIR)
-                    else "country",
-                    "country_dir": os.path.basename(country_dir),
-                },
+            fp = os.path.join(root, fname)
+            with open(fp, "r", encoding="utf-8") as f:
+                text = f.read().strip()
+
+            # country 추출 (data/japan/xxx.txt → japan)
+            parts = os.path.normpath(fp).split(os.sep)
+            country = parts[1] if len(parts) > 1 else "unknown"
+
+            docs.append(
+                Document(
+                    page_content=text,
+                    metadata={
+                        "source_file": fname,
+                        "country": country,  # 🔥 핵심
+                        "full_path": fp,
+                    },
+                )
             )
-        )
+
     return docs
 
 
@@ -89,31 +91,19 @@ def get_llm():
 def get_embeddings():
     return OpenAIEmbeddings(model="text-embedding-3-small")
 
-# -----------------------------
-# Build vectorstore per country (cached)
-# -----------------------------
 @st.cache_resource
-def build_vectorstore(country_dir: str):
-    # API 키 확인
-    if not os.getenv("OPENAI_API_KEY"):
-        return None, "❌ OPENAI_API_KEY 환경변수가 없습니다. 키 설정 후 다시 실행하세요."
-
-    if not os.path.isdir(country_dir):
-        return None, f"❌ 폴더가 없습니다: {country_dir}"
-
-    docs = load_txt_documents(country_dir)
-    if not docs:
-        return None, f"❌ TXT 파일이 없습니다: {country_dir}/*.txt"
+def build_global_vectorstore():
+    docs = load_all_documents(BASE_DATA_DIR)
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=900,
         chunk_overlap=150,
-        separators=["\n\n", "\n", "•", "-", " ", ""],
+        separators=["\n\n", "\n", "-", "•", " ", ""],
     )
     chunks = splitter.split_documents(docs)
 
-    vs = FAISS.from_documents(chunks, get_embeddings())
-    return vs, None
+    return FAISS.from_documents(chunks, get_embeddings())
+
 
 # -----------------------------
 # Sidebar UI
@@ -139,15 +129,12 @@ with st.sidebar:
     #     st.write("없음")
 
 # -----------------------------
-# Load vectorstore
+# Load global vectorstore
 # -----------------------------
-vectorstore, err = build_vectorstore(country_dir)
-if err:
-    st.error(err)
-    st.stop()
-
+vectorstore = build_global_vectorstore()
 retriever = vectorstore.as_retriever(search_kwargs={"k": k})
 llm = get_llm()
+
 
 # -----------------------------
 # Chat state
@@ -158,21 +145,11 @@ if "prev_country" not in st.session_state:
     st.session_state.prev_country = country_label
 
 
-# 🔥 국가가 바뀌었을 때 → 대화 초기화 + rerun
+# 국가 변경 시 토스트 팝업 노출(대화는 유지)
 if st.session_state.prev_country != country_label:
-    prev = st.session_state.prev_country    # 이전 국가
-    curr = country_label    # 변경된 국가
+    st.toast(f"{st.session_state.prev_country} → {country_label}로 국가가 변경되었습니다", icon="ℹ️")
+    st.session_state.prev_country = country_label
 
-    st.toast(f"{prev} → {curr}로 국가가 변경되어 대화가 새로 시작됩니다 ✨", icon="🔄")
-
-    st.session_state.messages = [
-        {
-            "role": "assistant",
-            "content": f"{curr} 워홀 관련해서 궁금한 거 물어봐! (비자/정착/취업/안전/귀국)"
-        }
-    ]
-    st.session_state.prev_country = curr
-    st.rerun()
 
 # 최초 실행 시
 if "messages" not in st.session_state:
