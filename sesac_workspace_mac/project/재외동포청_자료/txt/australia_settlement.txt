@@ -1,0 +1,24 @@
+[Housing]
+- 백팩커(호스텔), 셰어하우스, 홈스테이, 렌트하우스 형태 존재
+- 온라인 계약 사기 주의
+- 방을 직접 확인 후 계약 및 보증금 지불 권장
+
+[Backpackers]
+- 1박 비용: AUD 35~60
+- 다인실 사용, 귀중품 관리 필수
+- 성수기(3월, 12월~1월) 예약 필수
+
+[House Share]
+- 보통 6~10명이 공동 거주
+- 불법 구조 셰어 주의
+- 계약 파기 시 보증금 미환급 가능성 있음
+
+[Mobile & Internet]
+- 선불폰(Pre-paid) 사용 권장
+- 주요 통신사: Telstra, Optus, Vodafone
+- 인터넷: ADSL 또는 NBN 사용
+- 렌트 시 NBN 설치는 집주인 허락 필요
+
+[Bank Account]
+- 주요 은행: Commonwealth Bank, ANZ, NAB, Westpac
+- 계좌 개설 후 카드 수령까지 약 2주 소요
