@@ -1,12 +1,10 @@
 # ============================================================
 # 0. 기본 설정 & 라이브러리
-#    - Streamlit UI
-#    - LangChain (RAG)
-#    - 문서 로딩 / 벡터 검색
 # ============================================================
 import os
 import glob
 import re
+import requests
 import streamlit as st
 from dotenv import load_dotenv
 from typing import List, Optional
@@ -29,8 +27,7 @@ st.title("🌍 워홀 RAG 챗봇")
 st.caption("공식 문서 기반 워킹홀리데이 상담 챗봇")
 
 # ============================================================
-# 1. 국가 설정
-#    - UI 표시용 이름 ↔ 내부 키 매핑
+# 1. 국가 & 통화 설정
 # ============================================================
 BASE_DATA_DIR = "data"
 
@@ -42,7 +39,6 @@ COUNTRY_MAP = {
     "🇩🇪 독일": "germany",
 }
 
-# 질문 문장에서 국가 키워드 감지용
 COUNTRY_KEYWORDS = {
     "호주": "australia",
     "일본": "japan",
@@ -51,11 +47,18 @@ COUNTRY_KEYWORDS = {
     "독일": "germany",
 }
 
-# 내부 키 → UI 라벨
 REV_COUNTRY = {v: k for k, v in COUNTRY_MAP.items()}
 
+CURRENCY_MAP = {
+    "australia": "AUD",
+    "canada": "CAD",
+    "japan": "JPY",
+    "newzealand": "NZD",
+    "germany": "EUR",
+}
+
 # ============================================================
-# 1-1. 국가별 추천 질문 (온보딩 UX)
+# 1-1. 국가별 추천 질문
 # ============================================================
 SUGGESTED_QUESTIONS = {
     "australia": [
@@ -91,96 +94,127 @@ SUGGESTED_QUESTIONS = {
 }
 
 # ============================================================
-# 2. 출처 관련 유틸
-#    - 파일명 기반 섹션 추론
-#    - (공식 사이트 구조: 국가별 단일 URL + 탭)
+# 2. 환율 처리 유틸
 # ============================================================
-def infer_section_from_filename(fp: str) -> str:
-    """
-    txt 파일명에 포함된 키워드를 기준으로
-    '비자 / 취업 / 정착' 등의 섹션을 추론
-    """
-    name = os.path.basename(fp).lower()
-    if "visa" in name:
-        return "워홀비자 관련 정보"
-    if "job" in name or "work" in name:
-        return "취업 및 구직 정보"
-    if "settle" in name or "life" in name:
-        return "초기 정착 정보"
-    if "safety" in name or "law" in name:
-        return "안전 정보"
-    return "기타 공식 정보"
+# @st.cache_data(ttl=3600)
+# def get_exchange_rate(base: str) -> float:
+#     url = "https://api.exchangerate.host/latest"
+#     params = {"base": base, "symbols": "KRW"}
+#     r = requests.get(url, params=params, timeout=5)
+#     return r.json()["rates"]["KRW"]
 
 
-def country_page_url(country: str) -> str:
-    """
-    워킹홀리데이 인포센터는
-    국가별 단일 페이지 + 내부 탭 구조를 사용하므로
-    출처 URL은 국가별 페이지 단위로 제공한다.
-    """
+# def append_krw_amount(text: str, country: str) -> str:
+#     if country not in CURRENCY_MAP:
+#         return text
 
-    COUNTRY_URL_MAP = {
-        "australia": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100002",
-        "japan": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100012",
-        "canada": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100013",
-        "newzealand": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100003",
-        "germany": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100010",
-    }
+#     currency = CURRENCY_MAP[country]
+#     rate = get_exchange_rate(currency)
 
-    # 혹시 모를 예외 대비 (국가 미매핑 시 메인 페이지)
-    return COUNTRY_URL_MAP.get(
-        country,
-        "https://whic.mofa.go.kr/whic/main/"
-    )
+#     patterns = [
+#         rf"{currency}\s?([\d,]+)",
+#         rf"{currency[0]}\$\s?([\d,]+)",
+#         r"¥\s?([\d,]+)" if currency == "JPY" else None,
+#         r"€\s?([\d,]+)" if currency == "EUR" else None,
+#     ]
+
+#     for p in filter(None, patterns):
+#         m = re.search(p, text)
+#         if not m:
+#             continue
+
+#         amount = int(m.group(1).replace(",", ""))
+#         krw = int(amount * rate / 10000) * 10000
+#         text += f"\n\n※ 참고: {currency} {amount:,} ≈ 약 {krw:,}원 (환율 기준)"
+#         break
+
+#     return text
+
+@st.cache_data(ttl=3600)
+def get_exchange_rate(base: str) -> float | None:
+    try:
+        url = "https://api.exchangerate.host/latest"
+        params = {"base": base, "symbols": "KRW"}
+        r = requests.get(url, params=params, timeout=5)
+
+        # HTTP 에러
+        if r.status_code != 200:
+            st.warning(f"환율 API HTTP 오류: {r.status_code}")
+            return None
+
+        data = r.json()
+
+        # 응답 구조 검증
+        if not isinstance(data, dict):
+            st.warning("환율 API 응답이 JSON 객체가 아님")
+            return None
+
+        if "rates" not in data or "KRW" not in data["rates"]:
+            st.warning(f"환율 정보 누락: {data}")
+            return None
+
+        return data["rates"]["KRW"]
+
+    except Exception as e:
+        st.warning(f"환율 조회 중 오류 발생: {e}")
+        return None
+
+
+def append_krw_amount(text: str, country: str) -> str:
+    if country not in CURRENCY_MAP:
+        return text
+
+    currency = CURRENCY_MAP[country]
+    rate = get_exchange_rate(currency)
+
+    # ❗ 환율 못 가져오면 그냥 원문 반환
+    if rate is None:
+        return text
+
+    patterns = [
+        rf"{currency}\s?([\d,]+)",
+        rf"{currency[0]}\$\s?([\d,]+)",
+        r"¥\s?([\d,]+)" if currency == "JPY" else None,
+        r"€\s?([\d,]+)" if currency == "EUR" else None,
+    ]
+
+    for p in filter(None, patterns):
+        m = re.search(p, text)
+        if not m:
+            continue
+
+        amount = int(m.group(1).replace(",", ""))
+        krw = int(amount * rate / 10000) * 10000
+        text += f"\n\n※ 참고: {currency} {amount:,} ≈ 약 {krw:,}원 (환율 기준)"
+        break
+
+    return text
 
 
 # ============================================================
-# 3. 문서 로딩 & 벡터스토어 구축
-#    - data/국가/*.txt 로딩
-#    - 출처 메타데이터 포함
+# 3. 문서 로딩 & 벡터스토어
 # ============================================================
 def load_documents() -> List[Document]:
     docs = []
-
     for country in COUNTRY_MAP.values():
         path = os.path.join(BASE_DATA_DIR, country)
         if not os.path.isdir(path):
             continue
-
         for fp in glob.glob(os.path.join(path, "**", "*.txt"), recursive=True):
             with open(fp, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read().strip()
-
-            if not text:
-                continue
-
-            docs.append(
-                Document(
+            if text:
+                docs.append(Document(
                     page_content=text,
-                    metadata={
-                        "country": country,
-                        "site": "워킹홀리데이 인포센터 (외교부)",
-                        "section": infer_section_from_filename(fp),
-                        "url": country_page_url(country)
-                    }
-                )
-            )
-
+                    metadata={"country": country}
+                ))
     return docs
 
 
 @st.cache_resource
 def build_vectorstore():
-    """
-    문서를 chunk 단위로 분리한 뒤
-    OpenAI Embedding → FAISS 벡터스토어 생성
-    """
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=150
-    )
+    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
     chunks = splitter.split_documents(load_documents())
-
     return FAISS.from_documents(
         chunks,
         OpenAIEmbeddings(model="text-embedding-3-small")
@@ -190,36 +224,19 @@ def build_vectorstore():
 vectorstore = build_vectorstore()
 
 # ============================================================
-# 4. 검색 & 질문 유형 판단
+# 4. 검색 & 비교 판단
 # ============================================================
-def retrieve_by_countries(query: str, countries: List[str], k=6):
-    """
-    비교 질문에서 숫자/조건 정보가 포함된 chunk를
-    더 잘 가져오기 위해 검색 쿼리를 확장한다.
-    """
-
-    # 🔑 검색용 쿼리 확장 (사용자 질문은 변경하지 않음)
-    search_query = f"""
-    {query}
-    워킹홀리데이 비자
-    모집 인원 신청 기간 신청 자격 조건
-    체류 기간 연령 제한
-    """
-
-    results = vectorstore.similarity_search(search_query, k=40)
-
+def retrieve_by_countries(query: str, countries: List[str], k=4):
+    results = vectorstore.similarity_search(query, k=40)
     buckets = {c: [] for c in countries}
     for d in results:
         c = d.metadata.get("country")
         if c in buckets and len(buckets[c]) < k:
             buckets[c].append(d)
-
     return buckets
 
+
 def format_context(docs: List[Document], max_len=2000) -> str:
-    """
-    LLM에 전달할 컨텍스트 문자열 구성
-    """
     text = ""
     for d in docs:
         if len(text) > max_len:
@@ -229,63 +246,24 @@ def format_context(docs: List[Document], max_len=2000) -> str:
 
 
 def extract_countries(q: str) -> List[str]:
-    """
-    질문 문장에서 언급된 국가 추출
-    """
     return list({v for k, v in COUNTRY_KEYWORDS.items() if k in q})
 
 
 def is_comparison(q: str, mentioned: List[str], base: Optional[str]) -> bool:
-    """
-    비교 질문 여부 판단
-    """
     return (
         len(mentioned) >= 2
         or any(t in q for t in ["비교", "vs", "차이", "어디"])
+        or base is None
     )
 
 # ============================================================
-# 5. 출처 표시 포맷
-#    - 국가 페이지 URL + 섹션 설명
-# ============================================================
-def format_sources(docs: List[Document], max_sources=2) -> str:
-    seen = set()
-    blocks = []
-
-    for d in docs:
-        site = d.metadata.get("site")
-        section = d.metadata.get("section")
-        url = d.metadata.get("url")
-
-        key = (site, section)
-        if key in seen:
-            continue
-        seen.add(key)
-
-        blocks.append(
-            f"- **{site}**\n"
-            f"  · {url}"
-        )
-
-        if len(blocks) >= max_sources:
-            break
-
-    if not blocks:
-        return ""
-
-    return "\n\n---\n📄 **참고 출처**\n" + "\n".join(blocks)
-
-# ============================================================
-# 6. LLM 설정
+# 5. LLM
 # ============================================================
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
 
-# ============================================================
-# 7. 단일 국가 답변 생성
-# ============================================================
+
 def answer_single(question: str, country: str) -> str:
     docs = retrieve_by_countries(question, [country])[country]
-
     answer = llm.invoke(f"""
 [기준 국가]
 {REV_COUNTRY[country]}
@@ -296,65 +274,38 @@ def answer_single(question: str, country: str) -> str:
 [질문]
 {question}
 
-중요 지침:
-- 이 질문은 '국가 비교'가 아닙니다.
-- 표를 만들지 마세요.
-- 수도, 언어, 관광 정보, 체험 프로그램(WWOOF/HelpX 등) 설명은 하지 마세요.
-- 워킹홀리데이 비자 기준으로, **처음 준비할 때 필요한 절차와 조건**만 설명하세요.
-- 설명은 단계별(1→2→3)로 정리하세요.
-
 추가 지침:
 - 답변이 끝난 뒤,
-  "다음으로 도움이 될 수 있는 내용" 제목으로
+  "다음으로 도움이 될 수 있는 내용"이라는 제목으로
   다음 단계에서 준비하면 좋은 내용이나
   이어서 많이 묻는 질문을
-  최대 3개 bullet point로 정리하세요.
+  최대 3개까지 bullet point로 정리하세요.
 - 각 bullet point는 한 줄로 간결하게 작성하세요.
+- 새로운 질문을 강요하지 말고,
+  정리 형태로만 제공하세요.
 - 추천이나 판단은 하지 마세요.
 """).content.strip()
 
-    answer += format_sources(docs)
-    return answer
+    return append_krw_amount(answer, country)
 
-# ============================================================
-# 8. 국가 비교 답변 생성
-# ============================================================
+
 def answer_compare(question: str, countries: List[str]) -> str:
-    buckets = retrieve_by_countries(question, countries, k=3)
     blocks = []
-
+    buckets = retrieve_by_countries(question, countries, k=3)
     for c in countries:
-        blocks.append(
-            f"### {REV_COUNTRY[c]}\n{format_context(buckets[c], 1200)}"
-        )
+        blocks.append(f"### {REV_COUNTRY[c]}\n{format_context(buckets[c], 1200)}")
 
-    answer = llm.invoke(f"""
-아래 제공된 공식 문서를 근거로,
-**사용자가 명시한 국가만** 워킹홀리데이 제도를 비교하세요.
-
-중요 지침:
-- 조건, 제도, 비자 관련 내용만 비교하세요.
-- 수도, 언어, 관광, 체험 프로그램(WWOOF/HelpX 등)은 제외하세요.
-- 개인적인 추천이나 판단은 하지 마세요.
-- 반드시 표 형태로 작성하세요.
-- 문서에 없는 정보는 '추가 확인 필요'로 표시하되,
-    '검색된 문서 범위 내에서 확인되지 않음'이라고 설명하세요.
-
+    return llm.invoke(f"""
+공식 문서만을 근거로 국가를 비교하세요.
+반드시 표로 작성하고, 없는 정보는 '자료 없음'으로 표시하세요.
 
 {chr(10).join(blocks)}
 
 질문: {question}
 """).content.strip()
 
-    all_docs = []
-    for c in countries:
-        all_docs.extend(buckets[c])
-
-    answer += format_sources(all_docs)
-    return answer
-
 # ============================================================
-# 9. 세션 상태 초기화
+# 6. 세션 상태
 # ============================================================
 for k, v in {
     "onboarded": False,
@@ -364,14 +315,13 @@ for k, v in {
     st.session_state.setdefault(k, v)
 
 # ============================================================
-# 10. 온보딩 (기준 국가 선택)
+# 7. 온보딩
 # ============================================================
 if not st.session_state.onboarded:
     choice = st.radio(
         "기준 국가 선택",
         list(COUNTRY_MAP.keys()) + ["➕ 아직 정하지 않았어요"]
     )
-
     if st.button("시작하기"):
         st.session_state.base_country = (
             None if choice.endswith("어요") else COUNTRY_MAP[choice]
@@ -381,15 +331,13 @@ if not st.session_state.onboarded:
             {"role": "assistant", "content": "궁금한 걸 자유롭게 물어봐 😊"}
         ]
         st.rerun()
-
     st.stop()
 
 # ============================================================
-# 11. 사이드바 (설정)
+# 8. 사이드바
 # ============================================================
 with st.sidebar:
     st.subheader("⚙️ 설정")
-
     options = list(COUNTRY_MAP.keys()) + ["➕ 아직 정하지 않았어요"]
     current = st.session_state.base_country
     idx = options.index(
@@ -408,7 +356,7 @@ with st.sidebar:
         st.rerun()
 
 # ============================================================
-# 12. 추천 질문 UI
+# 9. 추천 질문 (첫 화면 전용)
 # ============================================================
 if len(st.session_state.messages) == 1:
     st.markdown(
@@ -429,7 +377,7 @@ if len(st.session_state.messages) == 1:
                 st.rerun()
 
 # ============================================================
-# 13. 채팅 UI
+# 10. 채팅
 # ============================================================
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
