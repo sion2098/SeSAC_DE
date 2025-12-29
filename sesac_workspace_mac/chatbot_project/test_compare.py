@@ -1,10 +1,6 @@
 '''
-국가별로 비교할때 값을 불러올 수 없음이 너무 많이 나와서 지피티 돌리니까
-해결 방법으로 최소한의 수정 or 구조화 다시하기 있길래
-두개 시도 전에 원본 코드 남김
-이게 태초의 원본이다...
+이건 최소한의 코드만 수정한 버전
 '''
-
 
 # ============================================================
 # 0. 기본 설정 & 라이브러리
@@ -62,14 +58,16 @@ REV_COUNTRY = {v: k for k, v in COUNTRY_MAP.items()}
 # ============================================================
 SUGGESTED_QUESTIONS = {
     "australia": [
-        "호주 워홀 처음인데, 준비는 어디서부터 해야 해?",
-        "호주 워홀 비자 신청할 때 잔고 증명은 어느 정도 필요해?",
-        "호주랑 캐나다 워홀 조건을 비교해줘",
+        "호주 비자 받는 방법 순서대로 알려줘",
+        # "호주 워홀 비자 신청할 때 잔고 증명은 어느 정도 필요해?",
+        "호주 취업 준비 방법은 뭐가 있어?",
+        "TFN 신청 절차 알려줘",
+        "호주 워홀중에 사고가 나서 응급 상황이 발생하면 어떻게 해야해?"
     ],
     "japan": [
         "일본 워홀은 나이 제한이 어떻게 돼?",
         "일본 워홀 비자 신청 절차를 순서대로 알려줘",
-        "일본 워홀은 추첨이야 선착순이야?",
+        "일본 취업 준비 방법은 뭐가 있어?",
     ],
     "canada": [
         "캐나다 워홀은 신청 자격 조건이 어떻게 돼?",
@@ -87,7 +85,7 @@ SUGGESTED_QUESTIONS = {
         "독일이랑 일본 워홀을 비교해줘",
     ],
     None: [
-        "워홀 국가를 아직 못 정했는데, 어떤 기준으로 선택하면 좋아?",
+        "워홀 국가를 아직 못 정했는데, 국가별로 간단하게 비교해줘",
         "호주, 일본, 캐나다 워홀을 한 번에 비교해줘",
         "워홀 처음인데, 나라 고르기 전에 뭘 알아야 해?",
     ]
@@ -196,12 +194,20 @@ vectorstore = get_vectorstore()
 # ============================================================
 # 3-1. 비교용 항목 정의 (항목별 retriever용)
 # ============================================================
+# COMPARE_FIELDS = {
+#     "모집 인원": "모집 인원 연간 인원 정원",
+#     "신청 기간": "신청 기간 연중 분기별 접수",
+#     "신청 자격 요건": "연령 나이 자격 조건 초기 자금",
+#     "비자 주요 특징": "체류 기간 취업 제한 학업 가능"
+# }
 COMPARE_FIELDS = {
-    "모집 인원": "모집 인원 연간 인원 정원",
-    "신청 기간": "신청 기간 연중 분기별 접수",
-    "신청 자격 요건": "연령 나이 자격 조건 초기 자금",
-    "비자 주요 특징": "체류 기간 취업 제한 학업 가능"
+    "모집 인원": "모집 인원 정원 인원 수",
+    "신청 기간": "신청 기간 접수 기간",
+    "신청 자격 요건": "신청 자격 요건 조건",
+    # "연령 요건": "만 세 이상 이하 연령",
+    "체류 가능 기간": "체류 기간 개월"
 }
+
 
 # ============================================================
 # 4. 검색 & 질문 유형 판단
@@ -228,15 +234,27 @@ def retrieve_by_countries(query: str, countries: List[str], k=6):
 
     return buckets
 
-def retrieve_by_field(country: str, field_query: str, k=3):
-    """
-    항목별 retriever:
-    특정 국가 + 특정 항목(모집 인원, 기간 등)에 대한 문서만 검색
-    """
-    query = f"{field_query} 워킹홀리데이"
-    results = vectorstore.similarity_search(query, k=k)
-    return [d for d in results if d.metadata.get("country") == country]
+# def retrieve_by_field(country: str, field_query: str, k=3):
+#     """
+#     항목별 retriever:
+#     특정 국가 + 특정 항목(모집 인원, 기간 등)에 대한 문서만 검색
+#     """
+#     query = f"{field_query} 워킹홀리데이"
+#     results = vectorstore.similarity_search(query, k=k)
+#     return [d for d in results if d.metadata.get("country") == country]
 
+def retrieve_by_field(country: str, field_query: str, k=5):
+    query = f"""
+    {REV_COUNTRY[country]} 워킹홀리데이 비자
+    {field_query}
+    """
+
+    results = vectorstore.similarity_search(query, k=k)
+
+    return [
+        d for d in results
+        if d.metadata.get("country") == country
+    ]
 
 def format_context(docs: List[Document], max_len=2000) -> str:
     text = ""
@@ -276,6 +294,30 @@ def is_comparison(q: str, mentioned: List[str], base: Optional[str]) -> bool:
 # ============================================================
 # 5. 출처 포맷 (국가별 1개만)
 # ============================================================
+# def format_sources_by_country(docs: List[Document]) -> str:
+#     seen = set()
+#     blocks = []
+
+#     for d in docs:
+#         country = d.metadata.get("country")
+#         site = d.metadata.get("site")
+#         url = d.metadata.get("url")
+
+#         if not country or country in seen:
+#             continue
+
+#         seen.add(country)
+
+#         blocks.append(
+#             f"- **{site} ({REV_COUNTRY.get(country, country)})**\n"
+#             f"  · {url}"
+#         )
+
+#     if not blocks:
+#         return ""
+
+#     return "\n\n---\n📄 **참고 출처**\n" + "\n".join(blocks)
+
 def format_sources_by_country(docs: List[Document]) -> str:
     seen = set()
     blocks = []
@@ -290,15 +332,17 @@ def format_sources_by_country(docs: List[Document]) -> str:
 
         seen.add(country)
 
+        country_label = REV_COUNTRY.get(country, country)
+
         blocks.append(
-            f"- **{site} ({REV_COUNTRY.get(country, country)})**\n"
-            f"  · {url}"
+            f"- [{site} – {country_label}]({url})"
         )
 
     if not blocks:
         return ""
 
     return "\n\n---\n📄 **참고 출처**\n" + "\n".join(blocks)
+
 
 # ============================================================
 # 6. LLM
@@ -364,6 +408,14 @@ SINGLE_COUNTRY_PROMPT = """
 - 숫자, 기간, 횟수 등 단일 사실 질문은
   핵심 답변만 한 문장으로 작성하세요.
 
+[링크 출력 규칙]
+- 공식 사이트, 정부 기관, 안내 페이지 등 URL이 포함된 정보는
+  반드시 마크다운 링크 형식으로 작성하세요.
+- 형식: [링크 설명](https://example.com)
+- URL을 일반 텍스트로 풀어 쓰지 마세요.
+- 링크 설명은 간결하게 작성하세요.
+
+
 [마무리]
 - 답변 마지막에 반드시 아래 섹션을 포함하세요.
 
@@ -422,16 +474,15 @@ COMPARE_COUNTRY_PROMPT = """
 - 위에 명시된 국가 외의 국가는 포함하지 마세요.
 
 [비교 기준]
-- 기본 비교 항목은 아래 5개입니다.
+- 기본 비교 항목은 아래 4개입니다.
 
 모집 인원  
 신청 기간  
 신청 자격 요건  
-연령 요건  
 체류 가능 기간  
 
 - 사용자가 비교 항목을 명시하지 않은 경우,
-  위 5개 항목을 기준으로 **전체 비교 표**를 작성하세요.
+  위 4개 항목을 기준으로 **전체 비교 표**를 작성하세요.
 - 사용자가 특정 비교 항목을 명시한 경우,
   해당 항목에 대해서만 **국가별로 더 구체적으로 비교**하세요.
 
@@ -443,6 +494,7 @@ COMPARE_COUNTRY_PROMPT = """
 - 문서 근거가 전혀 없는 경우에만
   "검색된 문서 범위 내에서 확인되지 않음"으로 표기하세요.
 - 임의 요약, 추측, 일반 상식 사용은 금지됩니다.
+
 
 [금지 사항]
 - 개인적인 추천, 판단, 우열 비교 표현 금지
