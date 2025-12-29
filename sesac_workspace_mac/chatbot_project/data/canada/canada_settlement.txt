@@ -1,15 +1,6 @@
-국가 및 지역별 정보
-국가 및 지역 선택 
-북아메리카 대륙 북부에 있는 영국연방 국가
-캐나다
-수도 : 오타와 (Ottawa)
-언어 : 프랑스어, 영어
-캐나다는 한국전 당시 2만 7천여 명의 병력을 파견한 3대 참전국이자, 민주주의, 자유, 인권 등의 가치를 공유하는 전통 우방국이며, 우리나라 재외동포가 25만여
-명으로 미국, 중국, 일본에 이어 네 번째로 많은 나라입니다. 한국과 캐나다는 1963년 수교하여 2014년 자유무역협정(FTA)을 체결하였고, 2022년 양국 정상회담을
-계기로 ‘포괄적 전략적 동반자 관계’가 되었습니다. 양국의 인적 교류도 크게 성장하여, 기존 4천 명 규모이던 워킹홀리데이가 2024년부터 1만2천 명 규모의
-청년교류프로그램으로 확대, 개편되었습니다.
-워홀비자 국가/지역소개 안전정보 초기정착
-취업정보 어학연수 여행정보 귀국준비
+초기정착
+
+
 ▣ 숙박(Housing)
 1) 호스텔 (Hostel)
 o 대도시에서 저렴한 비용에 임시로 체류할 수 있는 곳
@@ -21,6 +12,7 @@ o 주의점 : 호스텔에 따라 제공되는 무료서비스 항목이 다르�
 o 주요 사이트
 - https://hihostels.ca/
 - https://www.hostelworld.com/blog/c/canada/
+
 2) 홈스테이 (Homestay)
 o 우리나라 하숙과 비슷한 개념
 o 토론토에서 홈스테이를 할 경우 1인실과 2인실이 있으며, 건물이 신식이거나 대중교통이 편리할수록 가격이 더 높은편이다.
@@ -30,6 +22,7 @@ o 장점 : 캐나다인 혹은 동포가정에 머물면서 그 가정의 한 �
 o 단점 : 가격이 비싸고 생활이나 행동에 따른 제약이 있음 (샤워, TV 시청, 친구/지인 초대 등)
 o 주의점 : 보증금의 지불 여부, 비용에 공과금 (전기, 수도, 인터넷 등)포함 여부를 확인. 함께 사는 사람들의 신원 확인을 권장.
 o 대부분 홈스테이는 실내에서 흡연이 금지되어 있으며 친구를 집으로 초대할 경우에는 미리 허락을 받아야 함
+
 3) 아파트/콘도, 주택 등 렌트 또는 셰어하우스
 o 보통 아파트 계약 기간은 1년이며, 계약 기간을 채우지 못하면 불이익을 당할 수 있으나 남은 계약기간을 타인에게양도하는 방법도 있음.
 o 단기체류가 목적이라면 본인이 1년 기간을 렌트를 하기보다 룸메이트로 들어가는 것이 현명함.
@@ -52,6 +45,7 @@ o 고려할 점
 - 시설의 노후 정도
 - 합리적인 가격
 - 공동세입자들
+
 4) 세입자 보호 제도
 o 여러분은 임대차 계약과 관련하여 내국인과 동일한 권리를 보장받습니다.
 o 여러분이 집주인으로부터 부당한 대우를 받았다고 생각하는 경우 해당 지방정부가 세입자를 대신하여 분쟁에 개입합니다 .
@@ -93,6 +87,7 @@ https://www.saskatchewan.ca/government/government-structure/boards-commissions-a
 - 노스웨스트준주
 • 담당 부서 : NWT Rental Office
 • 홈페이지 : https://www.justice.gov.nt.ca/en/boards-agencies/rental-office/
+
 5) 호스텔 멤버쉽 카드 (Hosteling International Membership Card(Youth Hostel Card)
 o 현지의 유스호스텔연맹에 가입되어져 있는 유스호스텔을 이용하려면 유스호스텔증을 소지하고 있어야 합니다. 유스호스텔증을 소지하고 있지 않으면
 숙박이 거절되는 경우가 있다고는 하지만 그리 흔한 경우는 아닙니다. 한국유스호스텔연맹을 방문하여 유스호스텔증을 발급받거나 홈페이지를 통해 간단한
@@ -100,6 +95,7 @@ o 현지의 유스호스텔연맹에 가입되어져 있는 유스호스텔을 �
 - https://www.hihostels.com/about-membership/?linksubid=cmsheader
 o 캐나다 여행의 경우, 유용하게 사용할 수 있으며, 온라인.오프라인 예약시 모두 할인 적용을 받을 수 있음. 온라인으로 할인을 못 받았을 경우(예약시
 할인내용이 없었을 경우)에는 도착 후, 직원에게 말을 하면 해당 서비스를 받을 수 있음.
+
 ▣ 휴대전화 및 인터넷 사용 관련
 1) 휴대전화 (Mobile Phone)
 o 개통에 필요한 서류 : 사진이 있는 신분증과 신용카드
@@ -133,6 +129,7 @@ o 요금제
 ※ 주의
 - 최근 캐나다 통신사들의 국제 학생들에 대한 적극적인 포용정책에 따라 Monthly Plan 가입이 어렵지 않으나, 위약금 주의
 - 한국과는 달리 수신요금도 부과되므로 불필요한 수신전화는 피하는 것을 권장
+
 2) 인터넷 (Internet)
 o 인터넷 사용 빈도가 낮은 경우, 학교나 도서관에서 인터넷을 무료로 사용할 수 있음
 o 인터넷 사용 빈도가 높은 경우, PC방 이용이나 개인 인터넷 신청 고려
@@ -145,6 +142,7 @@ o 인터넷은 대부분 영어학교와 대학교에서 무료로 사용할 수
 - 홈스테이 가정에서 인터넷을 쓰는 경우
 • 대부분의 홈스테이 가정에는 무선 인터넷을 사용하고 있으므로, 홈스테이 가정과 인터넷 요금을 함께 부담하는 방법으로 사용할 수 있음.
 • 무선 인터넷이 없는 경우에는 무선 인터넷 공유기를 구입하거나, 추가 라인을 설치하는 방법이 있음.
+
 ▣ 은행 계좌 개설
 ※ 은행계좌를 개설할 때는 주위에 지점 및 현금인출기(ATM)가 많은 은행을 선택하는 것을 권장
 ※ 타 은행 현금인출기 혹은 편의점 현금인출기를 이용하는 경우 약 C$1.5~3정도의 추가 수수료를 부담해야 함
@@ -156,14 +154,17 @@ o Scotiabank: https://www.scotiabank.com/ca/en/personal.html
 o Bank of Montreal : https://www.bmo.com/main/personal
 o 캐나다 KEB하나은행(토론토, 밴쿠버) : https://kebhanabank.ca/ca/hp/personal/main.do
 o 캐나다 신한은행(토론토) : https://www.shinhan.ca/
+
 2) 개설 시 구비서류
 o 두 가지 이상의 신분증 (여권, 신용카드, 국제학생증, 국제운전면허증, 학생 비자 등)
 o 본인거주지 주소와 연락처
 o 입금액
+
 3) 은행 영업 시간
 o 보통 9시부터 오후 5시까지 이용 가능하며, 은행별로 시간대가 다르며, 주말에도 영업시간을 연장하는 추세
 - 예외 : TD 은행은 아침 8시부터 저녁 6시까지 영업하며 목/금은 8시까지 영업함
 - 주의사항 : 지역 브랜치마다 모두 영업시간이 다를 수도 있음.
+
 4) 은행 계좌 개설 순서
 o 두 개 이상의 다른 신분증을 지참하고 해당 은행 방문
 o 접수대에서 은행계좌 개설을 요청한 후, 은행에서 제시하는 신청서 작성
@@ -174,6 +175,7 @@ o 직불카드와 임시 개인 수표 등을 당일 발급 받으며 약 3시�
 주기도 함
 o 직불카드를 받으면 ATM에서 잔고를 확인. 인터넷뱅킹을 신청한 경우 인터넷에 접속해서 임시비밀번호를 본인이 앞으로 사용하게 될 비밀번호로 수정/
 설정해야 함
+
 5) 은행 계좌 종류
 o Saving Account
 - 한국의 정기예금/적금과 비슷한 성격의 계좌임. 예치금에 대해 높은 이자가 발생하지만, 입/출금 서비스 이용 시 높은 수수료가 부과됨
@@ -185,15 +187,18 @@ o 직불카드 (Debit Card)
 사용하는 것이 현금도난과 분실의 우려를 예방하는 방법이 될 수 있음.
 o 개인수표 (Personal Check)
 - 학비, 렌트비 등 고액을 지급할 때 사용하기 편리하며 자신의 이름과 주소가 기재된 개인수표에 금액을 기재하고 서명한 후 수취인에게 지급할 수 있음.
+
 6) 은행업무관련 유의점
 o 카드와 비밀번호를 잘 보관하고 유출되지 않도록 주의
 - 밤이나 인적이 드문 곳에서 현금 인출 시 가급적 주의가 필요
 - 개인 수표를 받을 경우, 신용할 수 있는 상대로부터만 수표를 수취하여야 하며 개인 수표로 결제할 경우에는 은행에 지출금에 해당하는 예금액이 있는지
 확인해 볼 필요가 있음. (예금액이 수표 결제액 보다 적을 경우, 벌금 부과와 개인 신용도에 큰 문제가 발생할 수 있음)
+
 ▣ 재외국민등록
 o 현지 거주지의 재외공관 (대사관, 총영사관, 영사관, 본관 또는 출장소)에 직접 방문 제출, 우편송부, 또는 웹사이트를 통해 등록 가능
 o 이는 외국에 거주하거나 체류하는 대한민국 국민이 해야 할 일종의 의무인 바 현지 거주현황을 파악함으로써 재외국민의 국내외 활동의 편익을 증진하고,
 보호하자는 데에 그 목적이 있음 (법률 제 8682호)
+
 ▣ 의료보험
 1) 캐나다 건강 의료 보험 제도 (Medicare)
 o 웹사이트 : https://www.canada.ca/en/health-canada/services/canada-health-care-system.html
@@ -206,6 +211,7 @@ o Health Card (건강 보험 카드)
 - 건강 보험 카드 소유자가 아닌 타인이 사용할 수 없음
 o 신청방법 : 온라인에서 지원서를 다운받아 작성, 합법적 비자를 들고 직접 방문하거나 우편 접수 가능
 * 아래의 '각 주별 의료 보험 제도' 참고
+
 2) 각 주별 의료 보험 제도
 ① Ontario
 o https://www.ontario.ca/page/apply-ohip-and-get-health-card
@@ -228,6 +234,7 @@ o 신청방법 : 반드시 직접 방문 신청
 -대표 전화 : 1-866-532-3161 (8:30~5:00까지 가능하며 20개 언어로 서비스)
 ※자세한 사항은 아래 온타리오주 의료보험 제도 관련 웹사이트를 확인하여 주시기 바랍니다.
 http://www.health.gov.on.ca/en/public/programs/ohip
+
 ② British Columbia
 o https://www2.gov.bc.ca/gov/content/health/health-drug-coverage/msp/bc-residents/eligibility-and-enrolment/are-you-
 eligible/working-holiday-programs
@@ -246,6 +253,7 @@ o 신청 방법
 Medical Service Plan
 PO Box 9678 Stn Prov Govt
 Victoria BC, V8W 9P7
+
 ③ Alberta
 o https://www.alberta.ca/ahcip.aspx
 o Alberta주 의료 보험 : Alberta Health Care Insurance Plan (AHCIP)
@@ -268,6 +276,7 @@ Alberta Health and Wellness (전화 : 780-427-1432)
 Attention : Alberta Health Care Insurance Plan
 PO Box 1360, Station Main
 Edmonton, AB, T5J 2N3
+
 ④ Saskatchewan
 o https://www.ehealthsask.ca/residents/health-cards
 o Saskatchewan주 의료 보험 : Saskatchewan Health Care Insurance Plan
@@ -286,6 +295,7 @@ o 구비 서류
 - 서스캐처원 거주 증빙 서류(서명된 임대 계약서, 공과금 등 주소가 적힌 청구서, 서스캐처원주 운전면허증 등)
 - 신청서
 (https://www.ehealthsask.ca/residents/health-cards/PublishingImages/Pages/Apply-for-a-Health-Card/Health_Card_Application_Form.pdf)
+
 ⑤ Yukon
 o https://yukon.ca/en/health-care-card
 o Yukon 주 의료 보험 : Yukon Health Insurance Plan
@@ -298,6 +308,7 @@ o 구비 서류
 - 신분 증명 서류(여권 등)
 - 1차 신분 증명 서류(비자 등)
 - 2차 신분 증명 서류 (여권, 운전면허증 등)
+
 ⑥ Northwest territories
 o https://www.hss.gov.nt.ca/en/services/nwt-health-care-plan
 o 자격 조건 : NWT에 거주하는 1년 이상의 합법적 캐나다 비자를 소지한 자
@@ -317,6 +328,7 @@ o 구비 서류
 - 노스웨스트준주 거주 증빙 서류 2개
 - 신청서 양식
 (https://www.hss.gov.nt.ca/sites/hss/files/request_for_health_care_coverage_0_1.pdf)
+
 ⑦ Quebec
 o http://www.ramq.gouv.qc.ca/en/Pages/home.aspx
 o Quebec주 의료 보험 : Regie de l’assurance maladie du Quebec (RAMQ)
@@ -325,6 +337,7 @@ o 자격 조건/적용 기간: 타 주 의료보험 만료와 동시에 적용�
 후 3개월 이후부터 의료보험 이용가능. 학생 또는 고용비자 소지자는 바로 가능.
 o 구비서류: 자격에 따라 아래 링크에서 확인 https://www.ramq.gouv.qc.ca/en/citizens/health-insurance
 o 신청 방법: 유선 또는 방문 접수
+
 ⑧ Nova Scotia
 o https://novascotia.ca/dhw/msi/
 o Nova Scotia주 의료보험 : Nova Scotia Health Card (MSI)
@@ -333,6 +346,7 @@ o 자격 조건: 캐나다 시민권자 또는 영주권자, 노바스코샤에 
 o 접수 방법: 유선, 우편, 방문접수
 - PO Box 500, Halifax NS B3J 2S1
 230 Brownlow Ave, Dartmouth NS
+
 ⑨ New Brunswick
 o https://www2.gnb.ca/content/gnb/en/departments/health.html
 o New Brunswick주 의료보험: New Brunswick Medicare
@@ -344,6 +358,7 @@ o 구비 서류: 자격에 따라 아래링크에서 확인
 -
 https://www2.gnb.ca/content/gnb/en/departments/health/MedicarePrescriptionDrugPlan/content/medicare/RequiredDocumentationforReg
 istration.html
+
 ⑩ New Foundland and labrador
 o https://www.gov.nl.ca/hcs/
 o New Foundland and Labador주 의료보험 : Medical Care Plan(MCP)
@@ -351,6 +366,7 @@ o New Foundland and Labador주 의료보험 : Medical Care Plan(MCP)
 o 자격 조건 : 캐나다 시민권자, 영주권자, 고용비자 소지자, 학부 이상 학생
 - 자격에 따라 상이한 구비서류: 위의 링크에서 확인
 o 접수 방법 : 양식은 가까운 병원 또는 MCP오피스에서 교부가능. 우편, 팩스, 방문접수
+
 ⑪ Prince Edward Island
 o https://www.princeedwardisland.ca/en/information/health-pei/pei-health-card?
 utm_source=redirect&utm_medium=url&utm_campaign=health-card
@@ -360,6 +376,7 @@ o 자격조건: 거주자 요건이 충족되는 자
 - 캐나다 합법적으로 체류 가능한 자
 - 1년에 PEI에서 6개월 1일 이상 거주한 자
 o 접수 방법 : 방문 접수
+
 ⑫ Manitoba
 o https://www.gov.mb.ca/health/mhsip/
 o 12개월 이상의 유효한 워크퍼밋이 있어야 하고, 매니토바주에서 거주지를 가지고 1년에 최소 6개월(183일) 이상 거주해야 한다. 방문자의 경우 신청
@@ -373,6 +390,7 @@ o 온라인 신청이 불가한 경우, 신청 서류를 우편이나 이메일 
 Mail or drop off: Registration and Client Services Manitoba Health
 300 Carlton Street, Winnipeg, Manitoba R3B 3M9
 - Business hours: Monday to Friday, 8:30am to 4:30pm.
+
 ▣ 현지 재외공관 도움처
 1) 주캐나다 대한민국 대사관
 o 주소 : 150 Boteler Street, Ottawa, Ontario, Canada K1N 5A6
@@ -381,18 +399,21 @@ o Fax: (613) 244-5043
 o E-Mail : canada@mofa.go.kr
 o 홈페이지 : https://overseas.mofa.go.kr/ca-ko/index.do
 o 관할 지역 : Ottawa
+
 2) 주몬트리올 대한민국 총영사관
 o 주소 : 1250 René-Lévesque Boulevard West, Suite 3600, Montreal H3B 4W8
 o 대표 전화 : (514) 845-2555
 o Fax : (514) 845-1999
 o 홈페이지 : https://overseas.mofa.go.kr/ca-montreal-ko/index.do
 o 관할지역 : Quebec, New Brunswick, Nova Scotia, PEI, and Newfoundland Labrador
+
 3) 주밴쿠버 대한민국 총영사관
 o 주소 : Suite 1600, 1090 West Georgia Street Vancouver, British Columbia, Canada V6E 3V7
 o 대표 전화 : (604) 681-9581
 o Fax : (604) 681-4864
 o 홈페이지: https://overseas.mofa.go.kr/ca-vancouver-ko/index.do
 o 관할 지역 : British Columbia, Alberta, Saskatchewan, Yukon Territory, and Northwest Territories
+
 4) 주토론토 대한민국 총영사관
 o 주소 : 555 Avenue Rd, Toronto, Ontario, M4V 2J7
 o 대표 전화 : (416) 920-3809

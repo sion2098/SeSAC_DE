@@ -4,7 +4,6 @@
 import os
 import glob
 import re
-import requests
 import streamlit as st
 from dotenv import load_dotenv
 from typing import List, Optional
@@ -27,7 +26,7 @@ st.title("🌍 워홀 RAG 챗봇")
 st.caption("공식 문서 기반 워킹홀리데이 상담 챗봇")
 
 # ============================================================
-# 1. 국가 & 통화 설정
+# 1. 국가 설정
 # ============================================================
 BASE_DATA_DIR = "data"
 
@@ -48,14 +47,6 @@ COUNTRY_KEYWORDS = {
 }
 
 REV_COUNTRY = {v: k for k, v in COUNTRY_MAP.items()}
-
-CURRENCY_MAP = {
-    "australia": "AUD",
-    "canada": "CAD",
-    "japan": "JPY",
-    "newzealand": "NZD",
-    "germany": "EUR",
-}
 
 # ============================================================
 # 1-1. 국가별 추천 질문
@@ -94,127 +85,74 @@ SUGGESTED_QUESTIONS = {
 }
 
 # ============================================================
-# 2. 환율 처리 유틸
+# 2. 출처 URL
 # ============================================================
-# @st.cache_data(ttl=3600)
-# def get_exchange_rate(base: str) -> float:
-#     url = "https://api.exchangerate.host/latest"
-#     params = {"base": base, "symbols": "KRW"}
-#     r = requests.get(url, params=params, timeout=5)
-#     return r.json()["rates"]["KRW"]
+def infer_section_from_filename(fp: str) -> str:
+    """
+    txt 파일명에 포함된 키워드를 기준으로
+    '비자 / 취업 / 정착' 등의 섹션을 추론
+    """
+    name = os.path.basename(fp).lower()
+    if "visa" in name:
+        return "워홀비자 관련 정보"
+    if "job" in name or "work" in name:
+        return "취업 및 구직 정보"
+    if "settle" in name or "life" in name:
+        return "초기 정착 정보"
+    if "safety" in name or "law" in name:
+        return "안전 정보"
+    return "기타 공식 정보"
 
-
-# def append_krw_amount(text: str, country: str) -> str:
-#     if country not in CURRENCY_MAP:
-#         return text
-
-#     currency = CURRENCY_MAP[country]
-#     rate = get_exchange_rate(currency)
-
-#     patterns = [
-#         rf"{currency}\s?([\d,]+)",
-#         rf"{currency[0]}\$\s?([\d,]+)",
-#         r"¥\s?([\d,]+)" if currency == "JPY" else None,
-#         r"€\s?([\d,]+)" if currency == "EUR" else None,
-#     ]
-
-#     for p in filter(None, patterns):
-#         m = re.search(p, text)
-#         if not m:
-#             continue
-
-#         amount = int(m.group(1).replace(",", ""))
-#         krw = int(amount * rate / 10000) * 10000
-#         text += f"\n\n※ 참고: {currency} {amount:,} ≈ 약 {krw:,}원 (환율 기준)"
-#         break
-
-#     return text
-
-@st.cache_data(ttl=3600)
-def get_exchange_rate(base: str) -> float | None:
-    try:
-        url = "https://api.exchangerate.host/latest"
-        params = {"base": base, "symbols": "KRW"}
-        r = requests.get(url, params=params, timeout=5)
-
-        # HTTP 에러
-        if r.status_code != 200:
-            st.warning(f"환율 API HTTP 오류: {r.status_code}")
-            return None
-
-        data = r.json()
-
-        # 응답 구조 검증
-        if not isinstance(data, dict):
-            st.warning("환율 API 응답이 JSON 객체가 아님")
-            return None
-
-        if "rates" not in data or "KRW" not in data["rates"]:
-            st.warning(f"환율 정보 누락: {data}")
-            return None
-
-        return data["rates"]["KRW"]
-
-    except Exception as e:
-        st.warning(f"환율 조회 중 오류 발생: {e}")
-        return None
-
-
-def append_krw_amount(text: str, country: str) -> str:
-    if country not in CURRENCY_MAP:
-        return text
-
-    currency = CURRENCY_MAP[country]
-    rate = get_exchange_rate(currency)
-
-    # ❗ 환율 못 가져오면 그냥 원문 반환
-    if rate is None:
-        return text
-
-    patterns = [
-        rf"{currency}\s?([\d,]+)",
-        rf"{currency[0]}\$\s?([\d,]+)",
-        r"¥\s?([\d,]+)" if currency == "JPY" else None,
-        r"€\s?([\d,]+)" if currency == "EUR" else None,
-    ]
-
-    for p in filter(None, patterns):
-        m = re.search(p, text)
-        if not m:
-            continue
-
-        amount = int(m.group(1).replace(",", ""))
-        krw = int(amount * rate / 10000) * 10000
-        text += f"\n\n※ 참고: {currency} {amount:,} ≈ 약 {krw:,}원 (환율 기준)"
-        break
-
-    return text
-
+def country_page_url(country: str) -> str:
+    COUNTRY_URL_MAP = {
+        "australia": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100002",
+        "japan": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100012",
+        "canada": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100013",
+        "newzealand": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100003",
+        "germany": "https://whic.mofa.go.kr/whic/nation/info.jsp?boardNo=100010",
+    }
+    return COUNTRY_URL_MAP.get(country, "https://whic.mofa.go.kr/whic/main/")
 
 # ============================================================
 # 3. 문서 로딩 & 벡터스토어
 # ============================================================
 def load_documents() -> List[Document]:
     docs = []
+
     for country in COUNTRY_MAP.values():
         path = os.path.join(BASE_DATA_DIR, country)
         if not os.path.isdir(path):
             continue
+
         for fp in glob.glob(os.path.join(path, "**", "*.txt"), recursive=True):
             with open(fp, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read().strip()
-            if text:
-                docs.append(Document(
+
+            if not text:
+                continue
+
+            docs.append(
+                Document(
                     page_content=text,
-                    metadata={"country": country}
-                ))
+                    metadata={
+                        "country": country,
+                        "site": "워킹홀리데이 인포센터 (외교부)",
+                        "url": country_page_url(country)
+                    }
+                )
+            )
+
     return docs
 
 
 @st.cache_resource
 def build_vectorstore():
-    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200
+    )
     chunks = splitter.split_documents(load_documents())
+
     return FAISS.from_documents(
         chunks,
         OpenAIEmbeddings(model="text-embedding-3-small")
@@ -224,15 +162,24 @@ def build_vectorstore():
 vectorstore = build_vectorstore()
 
 # ============================================================
-# 4. 검색 & 비교 판단
+# 4. 검색 & 질문 유형 판단
 # ============================================================
-def retrieve_by_countries(query: str, countries: List[str], k=4):
-    results = vectorstore.similarity_search(query, k=40)
+def retrieve_by_countries(query: str, countries: List[str], k=6):
+    search_query = f"""
+    {query}
+    워킹홀리데이 비자
+    모집 인원 신청 기간 신청 자격 조건
+    체류 기간 연령 제한
+    """
+
+    results = vectorstore.similarity_search(search_query, k=40)
+
     buckets = {c: [] for c in countries}
     for d in results:
         c = d.metadata.get("country")
         if c in buckets and len(buckets[c]) < k:
             buckets[c].append(d)
+
     return buckets
 
 
@@ -253,17 +200,46 @@ def is_comparison(q: str, mentioned: List[str], base: Optional[str]) -> bool:
     return (
         len(mentioned) >= 2
         or any(t in q for t in ["비교", "vs", "차이", "어디"])
-        or base is None
     )
 
 # ============================================================
-# 5. LLM
+# 5. 출처 포맷 (국가별 1개만)
+# ============================================================
+def format_sources_by_country(docs: List[Document]) -> str:
+    seen = set()
+    blocks = []
+
+    for d in docs:
+        country = d.metadata.get("country")
+        site = d.metadata.get("site")
+        url = d.metadata.get("url")
+
+        if not country or country in seen:
+            continue
+
+        seen.add(country)
+
+        blocks.append(
+            f"- **{site} ({REV_COUNTRY.get(country, country)})**\n"
+            f"  · {url}"
+        )
+
+    if not blocks:
+        return ""
+
+    return "\n\n---\n📄 **참고 출처**\n" + "\n".join(blocks)
+
+# ============================================================
+# 6. LLM
 # ============================================================
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
 
-
+# ============================================================
+# 7. 단일 국가 답변
+# ============================================================
 def answer_single(question: str, country: str) -> str:
     docs = retrieve_by_countries(question, [country])[country]
+
     answer = llm.invoke(f"""
 [기준 국가]
 {REV_COUNTRY[country]}
@@ -274,38 +250,65 @@ def answer_single(question: str, country: str) -> str:
 [질문]
 {question}
 
+중요 지침:
+- 이 질문은 '국가 비교'가 아닙니다.
+- 표를 만들지 마세요.
+- 수도, 언어, 관광 정보, 체험 프로그램(WWOOF/HelpX 등) 설명은 하지 마세요.
+- 워킹홀리데이 비자 기준으로, **처음 준비할 때 필요한 절차와 조건**만 설명하세요.
+- 설명은 단계별(1→2→3)로 정리하세요.
+- 질문이 단일 사실(숫자, 인원, 기간 등)을 묻는 경우, 핵심 답변만 한 문장으로 제공하고 추가 설명은 포함하지 마세요.
+
 추가 지침:
 - 답변이 끝난 뒤,
-  "다음으로 도움이 될 수 있는 내용"이라는 제목으로
+  "다음으로 도움이 될 수 있는 내용" 제목으로
   다음 단계에서 준비하면 좋은 내용이나
   이어서 많이 묻는 질문을
-  최대 3개까지 bullet point로 정리하세요.
+  최대 3개 bullet point로 정리하세요.
 - 각 bullet point는 한 줄로 간결하게 작성하세요.
-- 새로운 질문을 강요하지 말고,
-  정리 형태로만 제공하세요.
 - 추천이나 판단은 하지 마세요.
 """).content.strip()
 
-    return append_krw_amount(answer, country)
+    answer += format_sources_by_country(docs)
+    return answer
 
-
+# ============================================================
+# 8. 국가 비교 답변
+# ============================================================
 def answer_compare(question: str, countries: List[str]) -> str:
-    blocks = []
     buckets = retrieve_by_countries(question, countries, k=3)
-    for c in countries:
-        blocks.append(f"### {REV_COUNTRY[c]}\n{format_context(buckets[c], 1200)}")
 
-    return llm.invoke(f"""
-공식 문서만을 근거로 국가를 비교하세요.
-반드시 표로 작성하고, 없는 정보는 '자료 없음'으로 표시하세요.
+    blocks = []
+    for c in countries:
+        blocks.append(
+            f"### {REV_COUNTRY[c]}\n{format_context(buckets[c], 1200)}"
+        )
+
+    answer = llm.invoke(f"""
+아래 제공된 공식 문서를 근거로,
+**사용자가 명시한 국가만** 워킹홀리데이 제도를 비교하세요.
+
+중요 지침:
+- 조건, 제도, 비자 관련 내용만 비교하세요.
+- 수도, 언어, 관광, 체험 프로그램(WWOOF/HelpX 등)은 제외하세요.
+- 개인적인 추천이나 판단은 하지 마세요.
+- 반드시 표 형태로 작성하세요.
+- 문서에 없는 정보는 '검색된 문서 범위 내에서 확인되지 않음'이라고 설명하세요.
+- 질문이 단일 사실(숫자, 인원, 기간 등)을 묻는 경우, 핵심 답변만 한 문장으로 제공하고 추가 설명은 포함하지 마세요.
 
 {chr(10).join(blocks)}
 
 질문: {question}
 """).content.strip()
 
+    all_docs = []
+    for c in countries:
+        all_docs.extend(buckets[c])
+
+    answer += format_sources_by_country(all_docs)
+    return answer
+
 # ============================================================
-# 6. 세션 상태
+# 9. 세션 상태 초기화
 # ============================================================
 for k, v in {
     "onboarded": False,
@@ -315,13 +318,14 @@ for k, v in {
     st.session_state.setdefault(k, v)
 
 # ============================================================
-# 7. 온보딩
+# 10. 온보딩
 # ============================================================
 if not st.session_state.onboarded:
     choice = st.radio(
         "기준 국가 선택",
         list(COUNTRY_MAP.keys()) + ["➕ 아직 정하지 않았어요"]
     )
+
     if st.button("시작하기"):
         st.session_state.base_country = (
             None if choice.endswith("어요") else COUNTRY_MAP[choice]
@@ -331,13 +335,15 @@ if not st.session_state.onboarded:
             {"role": "assistant", "content": "궁금한 걸 자유롭게 물어봐 😊"}
         ]
         st.rerun()
+
     st.stop()
 
 # ============================================================
-# 8. 사이드바
+# 11. 사이드바 (설정)
 # ============================================================
 with st.sidebar:
     st.subheader("⚙️ 설정")
+
     options = list(COUNTRY_MAP.keys()) + ["➕ 아직 정하지 않았어요"]
     current = st.session_state.base_country
     idx = options.index(
@@ -356,7 +362,7 @@ with st.sidebar:
         st.rerun()
 
 # ============================================================
-# 9. 추천 질문 (첫 화면 전용)
+# 12. 추천 질문 UI
 # ============================================================
 if len(st.session_state.messages) == 1:
     st.markdown(
@@ -377,7 +383,7 @@ if len(st.session_state.messages) == 1:
                 st.rerun()
 
 # ============================================================
-# 10. 채팅
+# 13. 채팅 UI
 # ============================================================
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -385,13 +391,8 @@ for msg in st.session_state.messages:
 
 user_q = st.chat_input("질문을 입력하세요")
 
-if "pending_question" in st.session_state:
-    user_q = st.session_state.pop("pending_question")
-
 if user_q:
     st.session_state.messages.append({"role": "user", "content": user_q})
-    with st.chat_message("user"):
-        st.markdown(user_q)
 
     mentioned = extract_countries(user_q)
     compare = is_comparison(user_q, mentioned, st.session_state.base_country)
