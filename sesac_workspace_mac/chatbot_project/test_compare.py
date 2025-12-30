@@ -12,6 +12,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from typing import List, Optional
 
+# rag 사용할 때 쓰는 거임
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -277,7 +278,7 @@ def build_compare_context(country: str) -> str:
 def extract_countries(q: str) -> List[str]:
     return list({v for k, v in COUNTRY_KEYWORDS.items() if k in q})
 
-
+# 이게 라우터 역할을 함 -> 국가가 2개 이상이거나, 질문에 아래 키워드 들어가면 '비교질문인가?' 부분에서 분기됨
 def is_comparison(q: str, mentioned: List[str], base: Optional[str]) -> bool:
     return (
         len(mentioned) >= 2
