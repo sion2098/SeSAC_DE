@@ -668,42 +668,6 @@ if not st.session_state.onboarded:
 # ============================================================
 # 11. 사이드바 (설정)
 # ============================================================
-# with st.sidebar:
-#     st.subheader("⚙️ 설정")
-
-#     options = list(COUNTRY_MAP.keys()) + ["➕ 아직 정하지 않았어요"]
-#     current = st.session_state.base_country
-#     idx = options.index(
-#         "➕ 아직 정하지 않았어요" if current is None else REV_COUNTRY[current]
-#     )
-
-#     new = st.selectbox("기준 국가 변경", options, index=idx)
-#     if st.button("기준 국가 적용"):
-#         st.session_state.base_country = None if new.endswith("어요") else COUNTRY_MAP[new]
-#         st.rerun()
-
-#         # ✅ 국가가 실제로 변경된 경우에만 알림
-#         if prev != new_country:
-#             st.session_state.messages.append({
-#                 "role": "assistant",
-#                 "content": (
-#                     "🌍 **기준 국가가 변경되었습니다**\n\n"
-#                     f"- 이전 기준: **{REV_COUNTRY.get(prev, '없음')}**\n"
-#                     f"- 현재 기준: **{REV_COUNTRY.get(new_country, '없음')}**\n\n"
-#                     "이후 답변은 현재 기준 국가의 자료를 우선 참고합니다.\n"
-#                     "다른 국가에 대한 질문도 계속 가능합니다."
-#                 )
-#             })
-
-#         st.session_state.base_country = new_country
-#         st.session_state.prev_country = new_country
-#         st.rerun()
-
-#     if st.button("🗑️ 대화 초기화"):
-#         st.session_state.messages = [
-#             {"role": "assistant", "content": "대화를 초기화했어! 다시 질문해줘 😊"}
-#         ]
-#         st.rerun()
 
 with st.sidebar:
     st.subheader("⚙️ 설정")
