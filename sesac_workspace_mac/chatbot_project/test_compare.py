@@ -234,15 +234,6 @@ def retrieve_by_countries(query: str, countries: List[str], k=6):
 
     return buckets
 
-# def retrieve_by_field(country: str, field_query: str, k=3):
-#     """
-#     항목별 retriever:
-#     특정 국가 + 특정 항목(모집 인원, 기간 등)에 대한 문서만 검색
-#     """
-#     query = f"{field_query} 워킹홀리데이"
-#     results = vectorstore.similarity_search(query, k=k)
-#     return [d for d in results if d.metadata.get("country") == country]
-
 def retrieve_by_field(country: str, field_query: str, k=5):
     query = f"""
     {REV_COUNTRY[country]} 워킹홀리데이 비자
@@ -292,31 +283,65 @@ def is_comparison(q: str, mentioned: List[str], base: Optional[str]) -> bool:
     )
 
 # ============================================================
+# 4-1. "다음으로 도움이 될 수 있는 내용" 검증용 유틸(추가 뻑나면 지우기)
+# ============================================================
+
+def extract_followup_candidates(answer: str) -> List[str]:
+    """
+    LLM 답변에서 '다음으로 도움이 될 수 있는 내용' 섹션의
+    질문 후보만 추출
+    """
+    lines = answer.splitlines()
+    collecting = False
+    candidates = []
+
+    for line in lines:
+        if "다음으로 도움이 될 수 있는 내용" in line:
+            collecting = True
+            continue
+
+        if collecting:
+            if line.strip().startswith("-"):
+                q = line.strip().lstrip("-").strip()
+                if q:
+                    candidates.append(q)
+            elif line.strip() == "":
+                continue
+            else:
+                break
+
+    return candidates
+
+
+def filter_answerable_questions(
+    questions: List[str],
+    country: Optional[str],
+    min_docs: int = 1
+) -> List[str]:
+    """
+    질문 후보 중 실제로 문서 검색이 되는 질문만 통과
+    (최대 3개)
+    """
+    valid = []
+
+    for q in questions:
+        if country:
+            docs = retrieve_by_countries(q, [country])[country]
+        else:
+            docs_dict = retrieve_by_countries(q, list(COUNTRY_MAP.values()))
+            docs = sum(docs_dict.values(), [])
+
+        if len(docs) >= min_docs:
+            valid.append(q)
+
+        if len(valid) >= 3:
+            break
+
+    return valid
+
+# ============================================================
 # 5. 출처 포맷 (국가별 1개만)
 # ============================================================
-# def format_sources_by_country(docs: List[Document]) -> str:
-#     seen = set()
-#     blocks = []
-
-#     for d in docs:
-#         country = d.metadata.get("country")
-#         site = d.metadata.get("site")
-#         url = d.metadata.get("url")
-
-#         if not country or country in seen:
-#             continue
-
-#         seen.add(country)
-
-#         blocks.append(
-#             f"- **{site} ({REV_COUNTRY.get(country, country)})**\n"
-#             f"  · {url}"
-#         )
-
-#     if not blocks:
-#         return ""
-
-#     return "\n\n---\n📄 **참고 출처**\n" + "\n".join(blocks)
 
 def format_sources_by_country(docs: List[Document]) -> str:
     seen = set()
@@ -420,9 +445,11 @@ SINGLE_COUNTRY_PROMPT = """
 - 답변 마지막에 반드시 아래 섹션을 포함하세요.
 
 ### 다음으로 도움이 될 수 있는 내용
-- 최대 3개 bullet point
-- 한 줄씩 간결하게
-- 추천·판단·질문 유도 금지
+- 아래 항목은 "질문 후보"입니다.
+- 실제로 답변 가능한 질문만 노출됩니다.
+- 문서에 없는 내용은 질문을 생성하지 마세요.
+- 최대 3개까지 제시하세요.
+
 """
 
 def answer_single(question: str, country: str) -> str:
@@ -441,6 +468,30 @@ def answer_single(question: str, country: str) -> str:
     ])
 
     answer = llm.invoke(prompt.format_messages()).content.strip()
+    # ============================================================
+    # 🔽 "다음으로 도움이 될 수 있는 내용" 검증 로직 (추가)(여기도 뻑나면 삭제))
+    # ============================================================
+    candidates = extract_followup_candidates(answer)
+    filtered = filter_answerable_questions(
+        candidates,
+        country=country
+    )
+
+    if filtered:
+        answer = re.sub(
+            r"### 다음으로 도움이 될 수 있는 내용[\s\S]*$",
+            "### 다음으로 도움이 될 수 있는 내용\n"
+            + "\n".join(f"- {q}" for q in filtered),
+            answer
+        )
+    else:
+        # 하나도 통과 못 하면 섹션 자체 제거
+        answer = re.sub(
+            r"### 다음으로 도움이 될 수 있는 내용[\s\S]*$",
+            "",
+            answer
+        )
+    # ============================================================
     answer += format_sources_by_country(docs)
     return answer
 
@@ -538,6 +589,30 @@ def answer_compare(question: str, countries: List[str]) -> str:
     )
 
     answer = llm.invoke(prompt).content.strip()
+
+    # ============================================================
+    # 🔽 비교 답변용 "다음으로 도움이 될 수 있는 내용" 검증 (뻑나면 삭제)
+    # ============================================================
+    candidates = extract_followup_candidates(answer)
+    filtered = filter_answerable_questions(
+        candidates,
+        country=None  # 비교는 국가 전체 기준
+    )
+
+    if filtered:
+        answer = re.sub(
+            r"### 다음으로 도움이 될 수 있는 내용[\s\S]*$",
+            "### 다음으로 도움이 될 수 있는 내용\n"
+            + "\n".join(f"- {q}" for q in filtered),
+            answer
+        )
+    else:
+        answer = re.sub(
+            r"### 다음으로 도움이 될 수 있는 내용[\s\S]*$",
+            "",
+            answer
+        )
+    # ============================================================
 
     # 3️⃣ 출처 정리
     source_docs = [
