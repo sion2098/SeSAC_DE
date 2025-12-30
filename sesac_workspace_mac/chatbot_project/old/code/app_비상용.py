@@ -12,7 +12,6 @@ import streamlit as st
 from dotenv import load_dotenv
 from typing import List, Optional
 
-# rag 사용할 때 쓰는 거임
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -63,7 +62,7 @@ SUGGESTED_QUESTIONS = {
         # "호주 워홀 비자 신청할 때 잔고 증명은 어느 정도 필요해?",
         "호주 취업 준비 방법은 뭐가 있어?",
         "TFN 신청 절차 알려줘",
-        # "호주 워홀중에 사고가 나서 응급 상황이 발생하면 어떻게 해야해?"
+        "호주 워홀중에 사고가 나서 응급 상황이 발생하면 어떻게 해야해?"
     ],
     "japan": [
         "일본 워홀은 나이 제한이 어떻게 돼?",
@@ -95,22 +94,21 @@ SUGGESTED_QUESTIONS = {
 # ============================================================
 # 2. 출처 URL
 # ============================================================
-# def infer_section_from_filename(fp: str) -> str:
-#     """
-#     txt 파일명에 포함된 키워드를 기준으로
-#     '비자 / 취업 / 정착' 등의 섹션을 추론
-#     """
-#     name = os.path.basename(fp).lower()
-#     if "visa" in name:
-#         return "워홀비자 관련 정보"
-#     if "job" in name or "work" in name:
-#         return "취업 및 구직 정보"
-#     if "settle" in name or "life" in name:
-#         return "초기 정착 정보"
-#     if "safety" in name or "law" in name:
-#         return "안전 정보"
-#     return "기타 공식 정보"
-# -> 섹션 출처 사용안하고 국가 출처만 사용하니가 코드에서 이부분 빼도 되지 않을까 싶음
+def infer_section_from_filename(fp: str) -> str:
+    """
+    txt 파일명에 포함된 키워드를 기준으로
+    '비자 / 취업 / 정착' 등의 섹션을 추론
+    """
+    name = os.path.basename(fp).lower()
+    if "visa" in name:
+        return "워홀비자 관련 정보"
+    if "job" in name or "work" in name:
+        return "취업 및 구직 정보"
+    if "settle" in name or "life" in name:
+        return "초기 정착 정보"
+    if "safety" in name or "law" in name:
+        return "안전 정보"
+    return "기타 공식 정보"
 
 def country_page_url(country: str) -> str:
     COUNTRY_URL_MAP = {
@@ -196,11 +194,17 @@ vectorstore = get_vectorstore()
 # ============================================================
 # 3-1. 비교용 항목 정의 (항목별 retriever용)
 # ============================================================
-
+# COMPARE_FIELDS = {
+#     "모집 인원": "모집 인원 연간 인원 정원",
+#     "신청 기간": "신청 기간 연중 분기별 접수",
+#     "신청 자격 요건": "연령 나이 자격 조건 초기 자금",
+#     "비자 주요 특징": "체류 기간 취업 제한 학업 가능"
+# }
 COMPARE_FIELDS = {
     "모집 인원": "모집 인원 정원 인원 수",
     "신청 기간": "신청 기간 접수 기간",
     "신청 자격 요건": "신청 자격 요건 조건",
+    # "연령 요건": "만 세 이상 이하 연령",
     "체류 가능 기간": "체류 기간 개월"
 }
 
@@ -230,16 +234,18 @@ def retrieve_by_countries(query: str, countries: List[str], k=6):
 
     return buckets
 
+# def retrieve_by_field(country: str, field_query: str, k=3):
+#     """
+#     항목별 retriever:
+#     특정 국가 + 특정 항목(모집 인원, 기간 등)에 대한 문서만 검색
+#     """
+#     query = f"{field_query} 워킹홀리데이"
+#     results = vectorstore.similarity_search(query, k=k)
+#     return [d for d in results if d.metadata.get("country") == country]
+
 def retrieve_by_field(country: str, field_query: str, k=5):
     query = f"""
-    {REV_COUNTRY[country]} 
-    워킹홀리데이 비자
-    모집 인원 연간 인원 쿼터
-    신청 기간 분기별
-    연령 나이 제한
-    체류 기간
-    초기 자금 잔고
-    비자 특징
+    {REV_COUNTRY[country]} 워킹홀리데이 비자
     {field_query}
     """
 
@@ -266,19 +272,19 @@ def build_compare_context(country: str) -> str:
     context = f"### {REV_COUNTRY[country]}\n"
 
     for field, query in COMPARE_FIELDS.items():
-        docs = retrieve_by_field(country, query, k=40)
-        snippet = format_context(docs, max_len=5000)
+        docs = retrieve_by_field(country, query, k=3)
+        snippet = format_context(docs, max_len=400)
 
         context += f"\n[{field}]\n"
         context += snippet if snippet else "검색된 문서 범위 내에서 확인되지 않음"
         context += "\n"
 
     return context
-# 단일 국가로 물어보면 해당 함수 동작
+
 def extract_countries(q: str) -> List[str]:
     return list({v for k, v in COUNTRY_KEYWORDS.items() if k in q})
 
-# 이게 라우터 역할을 함 -> 국가가 2개 이상이거나, 질문에 아래 키워드 들어가면 '비교질문인가?' 부분에서 분기됨
+
 def is_comparison(q: str, mentioned: List[str], base: Optional[str]) -> bool:
     return (
         len(mentioned) >= 2
@@ -286,65 +292,32 @@ def is_comparison(q: str, mentioned: List[str], base: Optional[str]) -> bool:
     )
 
 # ============================================================
-# 4-1. "다음으로 도움이 될 수 있는 내용" 검증용 유틸(추가 뻑나면 지우기)
-# ============================================================
-
-def extract_followup_candidates(answer: str) -> List[str]:
-    """
-    LLM 답변에서 '다음으로 도움이 될 수 있는 내용' 섹션의
-    질문 후보만 추출
-    """
-    lines = answer.splitlines()
-    collecting = False
-    candidates = []
-
-    for line in lines:
-        if "다음으로 도움이 될 수 있는 내용" in line:
-            collecting = True
-            continue
-
-        if collecting:
-            if line.strip().startswith("-"):
-                q = line.strip().lstrip("-").strip()
-                if q:
-                    candidates.append(q)
-            elif line.strip() == "":
-                continue
-            else:
-                break
-
-    return candidates
-
-
-def filter_answerable_questions(
-    questions: List[str],
-    country: Optional[str],
-    min_docs: int = 1
-) -> List[str]:
-    """
-    질문 후보 중 실제로 문서 검색이 되는 질문만 통과
-    (최대 3개)
-    """
-    valid = []
-
-    for q in questions:
-        if country:
-            docs = retrieve_by_countries(q, [country])[country]
-        else:
-            docs_dict = retrieve_by_countries(q, list(COUNTRY_MAP.values()))
-            docs = sum(docs_dict.values(), [])
-
-        if len(docs) >= min_docs:
-            valid.append(q)
-
-        if len(valid) >= 3:
-            break
-
-    return valid
-
-# ============================================================
 # 5. 출처 포맷 (국가별 1개만)
 # ============================================================
+# def format_sources_by_country(docs: List[Document]) -> str:
+#     seen = set()
+#     blocks = []
+
+#     for d in docs:
+#         country = d.metadata.get("country")
+#         site = d.metadata.get("site")
+#         url = d.metadata.get("url")
+
+#         if not country or country in seen:
+#             continue
+
+#         seen.add(country)
+
+#         blocks.append(
+#             f"- **{site} ({REV_COUNTRY.get(country, country)})**\n"
+#             f"  · {url}"
+#         )
+
+#     if not blocks:
+#         return ""
+
+#     return "\n\n---\n📄 **참고 출처**\n" + "\n".join(blocks)
+
 def format_sources_by_country(docs: List[Document]) -> str:
     seen = set()
     blocks = []
@@ -447,11 +420,9 @@ SINGLE_COUNTRY_PROMPT = """
 - 답변 마지막에 반드시 아래 섹션을 포함하세요.
 
 ### 다음으로 도움이 될 수 있는 내용
-- 아래 항목은 "질문 후보"입니다.
-- 실제로 답변 가능한 질문만 노출됩니다.
-- 문서에 없는 내용은 질문을 생성하지 마세요.
-- 최대 3개까지 제시하세요.
-
+- 최대 3개 bullet point
+- 한 줄씩 간결하게
+- 추천·판단·질문 유도 금지
 """
 
 def answer_single(question: str, country: str) -> str:
@@ -470,30 +441,6 @@ def answer_single(question: str, country: str) -> str:
     ])
 
     answer = llm.invoke(prompt.format_messages()).content.strip()
-    # ============================================================
-    # 🔽 "다음으로 도움이 될 수 있는 내용" 검증 로직 (추가)(여기도 뻑나면 삭제))
-    # ============================================================
-    candidates = extract_followup_candidates(answer)
-    filtered = filter_answerable_questions(
-        candidates,
-        country=country
-    )
-
-    if filtered:
-        answer = re.sub(
-            r"### 다음으로 도움이 될 수 있는 내용[\s\S]*$",
-            "### 다음으로 도움이 될 수 있는 내용\n"
-            + "\n".join(f"- {q}" for q in filtered),
-            answer
-        )
-    else:
-        # 하나도 통과 못 하면 섹션 자체 제거
-        answer = re.sub(
-            r"### 다음으로 도움이 될 수 있는 내용[\s\S]*$",
-            "",
-            answer
-        )
-    # ============================================================
     answer += format_sources_by_country(docs)
     return answer
 
@@ -592,30 +539,6 @@ def answer_compare(question: str, countries: List[str]) -> str:
 
     answer = llm.invoke(prompt).content.strip()
 
-    # ============================================================
-    # 🔽 비교 답변용 "다음으로 도움이 될 수 있는 내용" 검증 (뻑나면 삭제)
-    # ============================================================
-    candidates = extract_followup_candidates(answer)
-    filtered = filter_answerable_questions(
-        candidates,
-        country=None  # 비교는 국가 전체 기준
-    )
-
-    if filtered:
-        answer = re.sub(
-            r"### 다음으로 도움이 될 수 있는 내용[\s\S]*$",
-            "### 다음으로 도움이 될 수 있는 내용\n"
-            + "\n".join(f"- {q}" for q in filtered),
-            answer
-        )
-    else:
-        answer = re.sub(
-            r"### 다음으로 도움이 될 수 있는 내용[\s\S]*$",
-            "",
-            answer
-        )
-    # ============================================================
-
     # 3️⃣ 출처 정리
     source_docs = [
         Document(
@@ -668,78 +591,35 @@ if not st.session_state.onboarded:
 # ============================================================
 # 11. 사이드바 (설정)
 # ============================================================
-# with st.sidebar:
-#     st.subheader("⚙️ 설정")
-
-#     options = list(COUNTRY_MAP.keys()) + ["➕ 아직 정하지 않았어요"]
-#     current = st.session_state.base_country
-#     idx = options.index(
-#         "➕ 아직 정하지 않았어요" if current is None else REV_COUNTRY[current]
-#     )
-
-#     new = st.selectbox("기준 국가 변경", options, index=idx)
-#     if st.button("기준 국가 적용"):
-#         st.session_state.base_country = None if new.endswith("어요") else COUNTRY_MAP[new]
-#         st.rerun()
-
-#         # ✅ 국가가 실제로 변경된 경우에만 알림
-#         if prev != new_country:
-#             st.session_state.messages.append({
-#                 "role": "assistant",
-#                 "content": (
-#                     "🌍 **기준 국가가 변경되었습니다**\n\n"
-#                     f"- 이전 기준: **{REV_COUNTRY.get(prev, '없음')}**\n"
-#                     f"- 현재 기준: **{REV_COUNTRY.get(new_country, '없음')}**\n\n"
-#                     "이후 답변은 현재 기준 국가의 자료를 우선 참고합니다.\n"
-#                     "다른 국가에 대한 질문도 계속 가능합니다."
-#                 )
-#             })
-
-#         st.session_state.base_country = new_country
-#         st.session_state.prev_country = new_country
-#         st.rerun()
-
-#     if st.button("🗑️ 대화 초기화"):
-#         st.session_state.messages = [
-#             {"role": "assistant", "content": "대화를 초기화했어! 다시 질문해줘 😊"}
-#         ]
-#         st.rerun()
-
 with st.sidebar:
     st.subheader("⚙️ 설정")
 
     options = list(COUNTRY_MAP.keys()) + ["➕ 아직 정하지 않았어요"]
-
-    prev_country = st.session_state.base_country
-
-    current_label = (
-        "➕ 아직 정하지 않았어요"
-        if prev_country is None
-        else REV_COUNTRY[prev_country]
+    current = st.session_state.base_country
+    idx = options.index(
+        "➕ 아직 정하지 않았어요" if current is None else REV_COUNTRY[current]
     )
-    idx = options.index(current_label)
 
-    new_label = st.selectbox("기준 국가 변경", options, index=idx)
-
+    new = st.selectbox("기준 국가 변경", options, index=idx)
     if st.button("기준 국가 적용"):
-        new_country = None if new_label.endswith("어요") else COUNTRY_MAP[new_label]
+        st.session_state.base_country = None if new.endswith("어요") else COUNTRY_MAP[new]
+        st.rerun()
 
-        # ✅ 실제로 국가가 바뀐 경우만 처리
-        if prev_country != new_country:
-            st.session_state.base_country = new_country
-            st.session_state.prev_country = new_country
-
+        # ✅ 국가가 실제로 변경된 경우에만 알림
+        if prev != new_country:
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": (
                     "🌍 **기준 국가가 변경되었습니다**\n\n"
-                    f"- 이전 기준: **{REV_COUNTRY.get(prev_country, '없음')}**\n"
+                    f"- 이전 기준: **{REV_COUNTRY.get(prev, '없음')}**\n"
                     f"- 현재 기준: **{REV_COUNTRY.get(new_country, '없음')}**\n\n"
-                    "이후 답변은 현재 기준 국가의 공식 문서를 우선 참고합니다.\n"
+                    "이후 답변은 현재 기준 국가의 자료를 우선 참고합니다.\n"
                     "다른 국가에 대한 질문도 계속 가능합니다."
                 )
             })
 
+        st.session_state.base_country = new_country
+        st.session_state.prev_country = new_country
         st.rerun()
 
     if st.button("🗑️ 대화 초기화"):
@@ -770,6 +650,8 @@ if len(st.session_state.messages) == 1 and not st.session_state.get("pending_que
                 st.session_state.pending_question = q
                 st.rerun()
 
+
+
 # ============================================================
 # 13. 채팅 UI
 # ============================================================
@@ -795,10 +677,13 @@ if user_q:
 
     # 2️⃣ 답변 생성
     mentioned = extract_countries(user_q)
+    print("mentioned:",mentioned)
     compare = is_comparison(user_q, mentioned, st.session_state.base_country)
+    print("compare:",compare)
 
     if compare:
         targets = mentioned or list(COUNTRY_MAP.values())
+        print("targets:",targets)
         answer = answer_compare(user_q, targets)
     else:
         country = mentioned[0] if mentioned else st.session_state.base_country
