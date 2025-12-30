@@ -62,7 +62,7 @@ SUGGESTED_QUESTIONS = {
         # "호주 워홀 비자 신청할 때 잔고 증명은 어느 정도 필요해?",
         "호주 취업 준비 방법은 뭐가 있어?",
         "TFN 신청 절차 알려줘",
-        # "호주 워홀중에 사고가 나서 응급 상황이 발생하면 어떻게 해야해?"
+        "호주 워홀중에 사고가 나서 응급 상황이 발생하면 어떻게 해야해?"
     ],
     "japan": [
         "일본 워홀은 나이 제한이 어떻게 돼?",
@@ -94,22 +94,21 @@ SUGGESTED_QUESTIONS = {
 # ============================================================
 # 2. 출처 URL
 # ============================================================
-# def infer_section_from_filename(fp: str) -> str:
-#     """
-#     txt 파일명에 포함된 키워드를 기준으로
-#     '비자 / 취업 / 정착' 등의 섹션을 추론
-#     """
-#     name = os.path.basename(fp).lower()
-#     if "visa" in name:
-#         return "워홀비자 관련 정보"
-#     if "job" in name or "work" in name:
-#         return "취업 및 구직 정보"
-#     if "settle" in name or "life" in name:
-#         return "초기 정착 정보"
-#     if "safety" in name or "law" in name:
-#         return "안전 정보"
-#     return "기타 공식 정보"
-# -> 섹션 출처 사용안하고 국가 출처만 사용하니가 코드에서 이부분 빼도 되지 않을까 싶음
+def infer_section_from_filename(fp: str) -> str:
+    """
+    txt 파일명에 포함된 키워드를 기준으로
+    '비자 / 취업 / 정착' 등의 섹션을 추론
+    """
+    name = os.path.basename(fp).lower()
+    if "visa" in name:
+        return "워홀비자 관련 정보"
+    if "job" in name or "work" in name:
+        return "취업 및 구직 정보"
+    if "settle" in name or "life" in name:
+        return "초기 정착 정보"
+    if "safety" in name or "law" in name:
+        return "안전 정보"
+    return "기타 공식 정보"
 
 def country_page_url(country: str) -> str:
     COUNTRY_URL_MAP = {
@@ -195,11 +194,17 @@ vectorstore = get_vectorstore()
 # ============================================================
 # 3-1. 비교용 항목 정의 (항목별 retriever용)
 # ============================================================
-
+# COMPARE_FIELDS = {
+#     "모집 인원": "모집 인원 연간 인원 정원",
+#     "신청 기간": "신청 기간 연중 분기별 접수",
+#     "신청 자격 요건": "연령 나이 자격 조건 초기 자금",
+#     "비자 주요 특징": "체류 기간 취업 제한 학업 가능"
+# }
 COMPARE_FIELDS = {
     "모집 인원": "모집 인원 정원 인원 수",
     "신청 기간": "신청 기간 접수 기간",
     "신청 자격 요건": "신청 자격 요건 조건",
+    # "연령 요건": "만 세 이상 이하 연령",
     "체류 가능 기간": "체류 기간 개월"
 }
 
@@ -229,16 +234,18 @@ def retrieve_by_countries(query: str, countries: List[str], k=6):
 
     return buckets
 
+# def retrieve_by_field(country: str, field_query: str, k=3):
+#     """
+#     항목별 retriever:
+#     특정 국가 + 특정 항목(모집 인원, 기간 등)에 대한 문서만 검색
+#     """
+#     query = f"{field_query} 워킹홀리데이"
+#     results = vectorstore.similarity_search(query, k=k)
+#     return [d for d in results if d.metadata.get("country") == country]
+
 def retrieve_by_field(country: str, field_query: str, k=5):
     query = f"""
-    {REV_COUNTRY[country]} 
-    워킹홀리데이 비자
-    모집 인원 연간 인원 쿼터
-    신청 기간 분기별
-    연령 나이 제한
-    체류 기간
-    초기 자금 잔고
-    비자 특징
+    {REV_COUNTRY[country]} 워킹홀리데이 비자
     {field_query}
     """
 
@@ -265,8 +272,8 @@ def build_compare_context(country: str) -> str:
     context = f"### {REV_COUNTRY[country]}\n"
 
     for field, query in COMPARE_FIELDS.items():
-        docs = retrieve_by_field(country, query, k=40)
-        snippet = format_context(docs, max_len=5000)
+        docs = retrieve_by_field(country, query, k=3)
+        snippet = format_context(docs, max_len=400)
 
         context += f"\n[{field}]\n"
         context += snippet if snippet else "검색된 문서 범위 내에서 확인되지 않음"
@@ -287,6 +294,30 @@ def is_comparison(q: str, mentioned: List[str], base: Optional[str]) -> bool:
 # ============================================================
 # 5. 출처 포맷 (국가별 1개만)
 # ============================================================
+# def format_sources_by_country(docs: List[Document]) -> str:
+#     seen = set()
+#     blocks = []
+
+#     for d in docs:
+#         country = d.metadata.get("country")
+#         site = d.metadata.get("site")
+#         url = d.metadata.get("url")
+
+#         if not country or country in seen:
+#             continue
+
+#         seen.add(country)
+
+#         blocks.append(
+#             f"- **{site} ({REV_COUNTRY.get(country, country)})**\n"
+#             f"  · {url}"
+#         )
+
+#     if not blocks:
+#         return ""
+
+#     return "\n\n---\n📄 **참고 출처**\n" + "\n".join(blocks)
+
 def format_sources_by_country(docs: List[Document]) -> str:
     seen = set()
     blocks = []
@@ -619,6 +650,8 @@ if len(st.session_state.messages) == 1 and not st.session_state.get("pending_que
                 st.session_state.pending_question = q
                 st.rerun()
 
+
+
 # ============================================================
 # 13. 채팅 UI
 # ============================================================
@@ -644,10 +677,13 @@ if user_q:
 
     # 2️⃣ 답변 생성
     mentioned = extract_countries(user_q)
+    print("mentioned:",mentioned)
     compare = is_comparison(user_q, mentioned, st.session_state.base_country)
+    print("compare:",compare)
 
     if compare:
         targets = mentioned or list(COUNTRY_MAP.values())
+        print("targets:",targets)
         answer = answer_compare(user_q, targets)
     else:
         country = mentioned[0] if mentioned else st.session_state.base_country
