@@ -95,22 +95,7 @@ SUGGESTED_QUESTIONS = {
 # ============================================================
 # 2. 출처 URL
 # ============================================================
-# def infer_section_from_filename(fp: str) -> str:
-#     """
-#     txt 파일명에 포함된 키워드를 기준으로
-#     '비자 / 취업 / 정착' 등의 섹션을 추론
-#     """
-#     name = os.path.basename(fp).lower()
-#     if "visa" in name:
-#         return "워홀비자 관련 정보"
-#     if "job" in name or "work" in name:
-#         return "취업 및 구직 정보"
-#     if "settle" in name or "life" in name:
-#         return "초기 정착 정보"
-#     if "safety" in name or "law" in name:
-#         return "안전 정보"
-#     return "기타 공식 정보"
-# -> 섹션 출처 사용안하고 국가 출처만 사용하니가 코드에서 이부분 빼도 되지 않을까 싶음
+
 
 def country_page_url(country: str) -> str:
     COUNTRY_URL_MAP = {
