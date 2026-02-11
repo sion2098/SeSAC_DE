@@ -1,0 +1,4827 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "id": "0e978e5f",
+      "metadata": {
+        "id": "0e978e5f"
+      },
+      "source": [
+        "# ⚡ 1교시: Spark를 넘어서, 왜 Flink인가?\n",
+        "\n",
+        "## 🎯 학습 목표\n",
+        "- Spark Structured Streaming의 한계 이해\n",
+        "- Micro-batch vs Native Streaming 차이 파악\n",
+        "- Apache Flink의 핵심 특징 학습\n",
+        "- PyFlink의 두 가지 API 개요 파악"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "2125d06a",
+      "metadata": {
+        "id": "2125d06a"
+      },
+      "source": [
+        "---\n",
+        "## 1. 우리가 구축했던 파이프라인 복습\n",
+        "\n",
+        "2차 프로젝트에서 **Kafka(수집) → Spark(배치/실시간 처리) → Elasticsearch(저장)** 파이프라인을 경험\n",
+        "\n",
+        "**질문**: 만약 1초의 지연도 허용하지 않는 시스템을 만든다면?\n",
+        "- 금융 사기 탐지 (Fraud Detection)\n",
+        "- 실시간 게임 아이템 추천\n",
+        "- 자율주행 센서 데이터 처리\n",
+        "\n",
+        "→ 지금의 Spark 방식이 최선일까?"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "ac721a22",
+      "metadata": {
+        "id": "ac721a22"
+      },
+      "source": [
+        "=== 우리가 만든 파이프라인 ===\n",
+        "\n",
+        "```\n",
+        "[Kafka Producer] → [Kafka Broker] → [Spark Structured Streaming] → [Elasticsearch]\n",
+        "    (수집)            (저장/전달)         (실시간? 처리)                (검색/시각화)\n",
+        "```\n",
+        "\n",
+        "✅ 잘 동작함\n",
+        "✅ 대용량 처리 가능\n",
+        "\n",
+        "❓ 하지만...\n",
+        "- \"실시간\"이라고 했는데, 정말 실시간인가?\n",
+        "- Spark는 데이터를 \"모아서\" 처리하는 구조\n",
+        "- 1초 미만의 반응이 필요한 상황에서는?"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "a3d062b7",
+      "metadata": {
+        "id": "a3d062b7"
+      },
+      "source": [
+        "---\n",
+        "## 2. 결정적 차이: Micro-batch vs Native Streaming\n",
+        "\n",
+        "### Spark Structured Streaming (기존에 배운 것)\n",
+        "\n",
+        "- **방식**: **마이크로 배치**(Micro-batching)\n",
+        "- 데이터를 실시간으로 처리하는 것처럼 보이지만, 사실은 **매우 짧은 주기로 데이터를 모아서 한 번에 처리**\n",
+        "- 비유: **버스** → 승객을 모아서 출발\n",
+        "- 아무리 빨라도 데이터를 모으는 시간(Latency)이 존재\n",
+        "- \"거의\" 실시간이지 \"완전한\" 실시간은 아님\n",
+        "\n",
+        "### Apache Flink (오늘 배울 것)\n",
+        "\n",
+        "- **방식**: **이벤트 기반**(Event-driven) / **네이티브 스트리밍**(Native Streaming)\n",
+        "- 버스를 기다리지 않고, 승객이 오자마자 바로 출발하는 **전용 택시** 또는 **수도관(Pipe)**\n",
+        "- 데이터가 들어오는 즉시(Row by Row) 처리\n",
+        "- 밀리세컨드(ms) 단위의 초저지연 처리 가능"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "cc17d36b",
+      "metadata": {
+        "id": "cc17d36b"
+      },
+      "source": [
+        "=== Micro-batch vs Native Streaming ===\n",
+        "![Micro-batch vs Native Streaming](https://cdn.discordapp.com/attachments/1457516082071081045/1470622787440869376/ChatGPT_Image_2026_2_10_12_28_47.png?ex=698bf7b3&is=698aa633&hm=00e6d2017780871f3b42b6ad25d8f5f3a86510032254a335f40a427ebed6e2b0&)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "2860ffbc",
+      "metadata": {
+        "id": "2860ffbc",
+        "lines_to_next_cell": 2
+      },
+      "source": [
+        "---\n",
+        "## 2.1 배치 / 실시간 / 스트림 개념 정리\n",
+        "\n",
+        "**❓ Kafka와 Flink는 실시간 처리 도구인가요?**\n",
+        "- 엄밀히 말하면 **스트림 처리(Stream Processing)** 도구입니다.\n",
+        "- 스트림 처리를 통해 실시간(Real-time) 성능을 \"구현\"하는 것입니다.\n",
+        "\n",
+        "### 📊 비교표\n",
+        "| 구분 | 배치(Batch) | 실시간(Real-time) | 스트림(Stream) |\n",
+        "|:---|:---|:---|:---|\n",
+        "| **한줄 요약** | 모아서 한 번에 처리 | 즉시 처리 | 흘러오는 대로 계속 처리 |\n",
+        "| **비유** | 세탁물 모아서 빨래 | 손빨래 즉시 | 컨베이어 벨트 자동 세탁 |\n",
+        "| **지연 시간** | 분 ~ 시간 | 밀리초 ~ 초 | 초 ~ 분 |\n",
+        "| **대표 도구** | Spark Batch, Airflow | OLTP DB | Kafka, Flink |\n",
+        "\n",
+        "### 🧠 쉽게 기억하기\n",
+        "- **배치**: \"나중에 한꺼번에\" → 급하지 않은 대량 작업 (유한 데이터)\n",
+        "- **실시간**: \"지금 당장\" → 즉각 응답이 필요한 비즈니스 요구사항\n",
+        "- **스트림**: \"끊임없이 흘러가며\" → 데이터가 계속 들어오는 처리 방식 (무한 데이터)\n",
+        "\n",
+        "> **💡 핵심 요약**: 실시간은 **속도(SLA)** 에 대한 요구사항이고, 스트림은 **데이터 처리 패턴**입니다. Flink는 스트림 처리 방식을 사용하여 실시간 요구사항을 완벽하게 충족합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "635cea11",
+      "metadata": {
+        "id": "635cea11",
+        "lines_to_next_cell": 2
+      },
+      "source": [
+        "---\n",
+        "## 3. Spark에서 까다로웠던 문제들, Flink는 이렇게 풉니다\n",
+        "\n",
+        "### ① 늦게 도착한 데이터 처리 (Event Time & Watermark)\n",
+        "\n",
+        "**상황**: 네트워크 지연으로 10:00의 데이터가 10:05에 도착\n",
+        "\n",
+        "| 구분 | Spark | Flink |\n",
+        "|------|-------|-------|\n",
+        "| 워터마크 갱신 시점 | **마이크로 배치 경계**에서만 갱신 | 데이터 흐름 속 **특수 이벤트**로 실시간 갱신 |\n",
+        "| 윈도우 닫기 | 배치가 완료되어야 확정 | 워터마크 도달 즉시 닫기 |\n",
+        "| 늦은 데이터 처리 | 워터마크 이후 데이터 → 버림 | **Side Output**으로 별도 추출 → 재처리 가능 |\n",
+        "\n",
+        "### ② 상태 관리 (State Management)\n",
+        "\n",
+        "**💡 상태(State)란?**\n",
+        "\n",
+        "스트림 처리 중 **과거의 데이터를 기억**해야 할 때 저장하는 정보입니다.\n",
+        "\n",
+        "(예: 현재까지의 합계, 최근 1시간 동안의 접속 기록, 머신러닝 모델 파라미터 등)\n",
+        "\n",
+        "**상황**: \"지난 7일 동안 이 유저가 접속한 횟수 누적\" 같은 긴 호흡의 데이터\n",
+        "\n",
+        "| 구분 | Spark | Flink |\n",
+        "|------|-------|-------|\n",
+        "| 저장 위치 | **메모리(Heap)** 기본 | **메모리** 또는 **RocksDB(Disk)** 선택 가능 |\n",
+        "| 대용량 상태 | JVM 메모리 압박 심함 | RocksDB로 PB급 상태 관리 가능 |\n",
+        "| 체크포인트 | 전체 상태 디스크 기록 (Stop-the-world) | **증분 백업**(Incremental Checkpointing) 지원 |"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "6e77d976",
+      "metadata": {
+        "id": "6e77d976"
+      },
+      "source": [
+        "---\n",
+        "## 4. 비교 정리표\n",
+        "\n",
+        "| 비교 포인트 | Spark Structured Streaming (배운 것) | Apache Flink (배울 것) | Flink가 필요한 순간 |\n",
+        "|-------------|-------------------------------------|----------------------|-------------------|\n",
+        "| **처리 방식** | **Micro-batch** (모아서 처리) | **Native Streaming** (오자마자 처리) | 1초 미만의 즉각적인 반응이 생명일 때 |\n",
+        "| **지연 시간** | 수 초(Seconds) 단위 | 밀리초(Milliseconds) 단위 | 금융, 이상 탐지, 실시간 관제 |\n",
+        "| **데이터 처리 단위** | RDD / DataFrame (작은 배치) | Event (개별 데이터) | 데이터 하나하나의 순서가 중요할 때 |\n",
+        "| **상태 관리** | 배치 주기에 의존적 | 매우 정교하고 강력함 (Stateful) | 복잡한 시계열 패턴 분석 |"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "5242f946",
+      "metadata": {
+        "id": "5242f946"
+      },
+      "source": [
+        "\n",
+        "**언제 Spark, 언제 Flink?**\n",
+        "\n",
+        "✅ Spark가 적합한 경우:\n",
+        "   - 대용량 배치 처리 (ETL)\n",
+        "   - 수 초 지연 허용 가능한 실시간 처리\n",
+        "   - 풍부한 생태계(ML, Graph 등) 활용\n",
+        "   - 팀에 Spark 경험자가 많을 때\n",
+        "\n",
+        "✅ Flink가 적합한 경우:\n",
+        "   - 밀리초 단위 응답 필수 (금융 사기 탐지)\n",
+        "   - 복잡한 이벤트 패턴 감지 (CEP)\n",
+        "   - 대규모 상태 관리 (유저별 세션 추적)\n",
+        "   - 정확한 이벤트 시간 처리 필요\n",
+        "   - 실시간 관제/모니터링 시스템\n",
+        "\n",
+        "💡 결론:\n",
+        "   \"Spark는 대용량 데이터를 빠르게 처리하는 데 여전히 강력한 도구.\n",
+        "    하지만 '반응 속도'가 비즈니스의 핵심 가치인 영역에서는 Flink가 표준.\""
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "4e854535",
+      "metadata": {
+        "id": "4e854535"
+      },
+      "source": [
+        "---\n",
+        "## 5. Apache Flink란?\n",
+        "\n",
+        "![Flink Logo](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQu3LiaVLcRpXcG3ysBB9S41C_bhZT_lXFshQ&s)\n",
+        "\n",
+        "### 정의\n",
+        "- **Apache Flink**: 분산 스트림 처리 엔진\n",
+        "- 실시간 데이터 스트리밍 + 배치 처리 모두 지원\n",
+        "- **\"모든 것은 스트림\"** → 배치는 유한한 스트림(Bounded Stream)의 특수 케이스\n",
+        "\n",
+        "### 핵심 특징\n",
+        "\n",
+        "| 특징 | 설명 |\n",
+        "|------|------|\n",
+        "| **True Streaming** | 마이크로배치가 아닌 진정한 스트림 처리 |\n",
+        "| **Event Time** | 이벤트 발생 시간 기반 처리 |\n",
+        "| **Stateful** | 상태 관리 및 Exactly-Once 보장 |\n",
+        "| **Fault Tolerant** | 체크포인트 기반 장애 복구 |\n",
+        "| **Unified API** | 스트림/배치 통합 API |\n",
+        "\n",
+        "> 📖 **공식 문서**: [Apache Flink](https://flink.apache.org/) 참고"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "18e70448",
+      "metadata": {
+        "id": "18e70448"
+      },
+      "source": [
+        "---\n",
+        "## 6. PyFlink 개요\n",
+        "\n",
+        "**PyFlink**: Apache Flink의 Python API\n",
+        "\n",
+        "![pyflink](https://nightlies.apache.org/flink/flink-docs-release-2.2/fig/pyflink.svg)\n",
+        "\n",
+        "### 주요 활용 분야\n",
+        "- 실시간 데이터 처리 파이프라인\n",
+        "- 대규모 탐색적 데이터 분석\n",
+        "- 머신러닝(ML) 파이프라인\n",
+        "- ETL 프로세스\n",
+        "\n",
+        "### 장점\n",
+        "- Python과 Pandas에 익숙하다면 Flink 생태계를 쉽게 활용 가능\n",
+        "\n",
+        "### 두 가지 API\n",
+        "\n",
+        "| API | 특징 | Spark 대응 |\n",
+        "|-----|------|-----------|\n",
+        "| **Table API** | SQL과 유사, 높은 수준의 추상화, 자동 최적화 | **DataFrame API** |\n",
+        "| **DataStream API** | 상태(state)와 시간(time)에 대한 저수준 제어, 세밀한 제어 | **RDD API** |\n",
+        "\n",
+        "→ 선언적이고 SQL 스타일 작업 → **Table API**\n",
+        "\n",
+        "→ 복잡한 스트리밍 로직과 세부 제어 → **DataStream API**\n",
+        "\n",
+        "> 📖 **공식 문서**: [PyFlink Documentation](https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/python/overview/) 참고\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "cfad51a9",
+      "metadata": {
+        "id": "cfad51a9"
+      },
+      "source": [
+        "---\n",
+        "## 📝 FAQ\n",
+        "\n",
+        "**Q1. Flink가 Spark보다 항상 좋은 건가요?**\n",
+        "\n",
+        "→ 아닙니다. Spark는 대용량 배치 처리, ML 파이프라인, 풍부한 생태계에서 여전히 강력합니다. **\"반응 속도\"가 핵심인 영역**에서만 Flink가 유리합니다.\n",
+        "\n",
+        "**Q2. Flink도 배치 처리를 할 수 있나요?**\n",
+        "\n",
+        "→ 네. Flink는 \"모든 것은 스트림\"이라는 철학으로, 배치를 \"유한한 스트림\"으로 처리합니다. `RuntimeExecutionMode.BATCH` 설정으로 전환 가능합니다.\n",
+        "\n",
+        "**Q3. PyFlink는 PySpark보다 느린가요?**\n",
+        "\n",
+        "→ PyFlink의 Table API는 Java 기반 최적화 엔진을 사용하므로 성능 차이가 크지 않습니다. DataStream API에서 Python UDF를 사용할 때는 JVM-Python 간 통신 오버헤드가 발생할 수 있습니다.\n",
+        "\n",
+        "**Q4. Flink의 학습 곡선이 높다고 하던데요?**\n",
+        "\n",
+        "→ Spark를 이미 배웠기 때문에 많은 개념이 겹칩니다. Source, Transformation, Sink 구조는 동일하고, 용어만 다릅니다.\n",
+        "\n",
+        "**Q5. 실무에서 Flink를 많이 사용하나요?**\n",
+        "\n",
+        "→ 넷플릭스, 우버, 알리바바 등 대규모 실시간 처리가 필요한 기업에서 광범위하게 사용 중입니다. 한국에서도 카카오, 네이버, 쿠팡 등에서 활용합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "af917110",
+      "metadata": {
+        "id": "af917110"
+      },
+      "source": [
+        "---\n",
+        "## ✅ 퀴즈\n",
+        "\n",
+        "**Q1.** Spark Structured Streaming의 처리 방식을 가장 정확하게 설명한 것은?\n",
+        "\n",
+        "- A) 이벤트가 도착하는 즉시 하나씩 처리하는 방식\n",
+        "- B) 데이터를 짧은 주기로 모아서 배치로 처리하는 방식\n",
+        "- C) 데이터를 메모리에 전부 올린 후 한 번에 처리하는 방식\n",
+        "- D) GPU를 활용하여 병렬 처리하는 방식\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: B)**\n",
+        "\n",
+        "Spark Structured Streaming은 **마이크로 배치(Micro-batch)** 방식으로, 데이터를 짧은 주기(예: 100ms~수 초)로 모아서 한 번에 처리합니다. 실시간처럼 보이지만 완전한 실시간은 아닙니다.\n",
+        "\n",
+        "</details>\n",
+        "\n",
+        "---\n",
+        "\n",
+        "**Q2.** Flink가 Spark보다 유리한 상황으로 **적절하지 않은** 것은?\n",
+        "\n",
+        "- A) 금융 사기 탐지 시스템\n",
+        "- B) 대용량 로그 데이터의 일괄 ETL 처리\n",
+        "- C) 실시간 게임 아이템 추천\n",
+        "- D) IoT 센서 이상 탐지\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: B)**\n",
+        "\n",
+        "대용량 로그 데이터의 일괄 ETL 처리는 **배치 처리**에 해당하며, 이는 Spark의 강점입니다. Flink는 밀리초 단위의 즉각적 반응이 필요한 A, C, D 같은 상황에서 유리합니다.\n",
+        "\n",
+        "</details>\n",
+        "\n",
+        "---\n",
+        "\n",
+        "**Q3.** PyFlink의 Table API와 DataStream API에 대한 설명으로 올바른 것은?\n",
+        "\n",
+        "- A) Table API는 저수준 제어에 적합하다\n",
+        "- B) DataStream API는 SQL과 유사한 방식이다\n",
+        "- C) Table API는 Spark의 DataFrame API와 유사하다\n",
+        "- D) DataStream API만 배치 처리를 지원한다\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: C)**\n",
+        "\n",
+        "Table API는 SQL과 유사한 **고수준 추상화**로, Spark의 **DataFrame API**와 대응됩니다. DataStream API가 저수준 제어(Spark RDD 대응)에 해당합니다.\n",
+        "\n",
+        "</details>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "73207c6c",
+      "metadata": {
+        "id": "73207c6c"
+      },
+      "source": [
+        "---\n",
+        "## 📌 핵심 요약\n",
+        "\n",
+        "| 개념 | 핵심 내용 |\n",
+        "|------|----------|\n",
+        "| **Micro-batch** | Spark 방식. 데이터를 모아서 처리. 수 초 지연 |\n",
+        "| **Native Streaming** | Flink 방식. 이벤트 즉시 처리. 밀리초 지연 |\n",
+        "| **Watermark** | Flink는 데이터 흐름 속 특수 이벤트로 처리, Side Output으로 늦은 데이터 재처리 가능 |\n",
+        "| **State Management** | Flink는 RocksDB로 PB급 상태 관리, 증분 백업 지원 |\n",
+        "| **PyFlink Table API** | SQL 스타일, 고수준 추상화, Spark DataFrame 대응 |\n",
+        "| **PyFlink DataStream API** | 저수준 제어, 복잡한 이벤트 처리, Spark RDD 대응 |"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "7a3b33ee",
+      "metadata": {
+        "id": "7a3b33ee"
+      },
+      "source": [
+        "# ⚡ PyFlink 입문: 환경 설정부터 DataStream & Table API까지\n",
+        "\n",
+        "이 교안은 PyFlink의 핵심 개념과 API를 실습합니다.\n",
+        "Day27 1교시에서 Spark와 Flink의 차이, PyFlink 개요를 살펴보았습니다.\n",
+        "이제 직접 코드를 작성하면서 PyFlink의 두 가지 API를 체험해 봅시다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "54dd4d05",
+      "metadata": {
+        "id": "54dd4d05"
+      },
+      "source": [
+        "## 🎯 학습 목표\n",
+        "\n",
+        "1. PyFlink 실행 환경(Docker)을 이해하고 설정할 수 있다\n",
+        "2. 고차함수(Higher-Order Function) 개념을 이해하고 DataStream API에 적용할 수 있다\n",
+        "3. DataStream API로 데이터 변환 파이프라인을 구성할 수 있다\n",
+        "4. State(상태)와 Window(윈도우)를 활용한 스트림 처리를 구현할 수 있다\n",
+        "5. Table API로 SQL 스타일의 데이터 처리를 수행할 수 있다\n",
+        "6. DataStream API와 Table API를 혼합하여 사용할 수 있다\n",
+        "\n",
+        "**전제조건**\n",
+        "- **Day27 1교시** 내용 복습 (Spark vs Flink 비교, PyFlink 개요)\n",
+        "- Docker 기본 사용법 (이미지 빌드, 컨테이너 실행)\n",
+        "- Python 기초 문법 (함수 정의, 리스트 조작)\n",
+        "\n",
+        "**실행 환경**: Docker 컨테이너 (`my-pyflink-image`) 내부 Jupyter에서 실행\n",
+        "\n",
+        "> 📖 **참고 문서**: [Flink Python API 공식 문서](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/python/overview/)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "3cd9b9e6",
+      "metadata": {
+        "id": "3cd9b9e6"
+      },
+      "source": [
+        "---\n",
+        "## 1. PyFlink 환경 설정\n",
+        "\n",
+        "Docker에 대한 기본 수업은 이미 진행했습니다. 여기서는 **\"왜 Docker?\"**가 아니라\n",
+        "**\"어떻게 Docker를 활용해서 Flink를 실행할 것인가?\"**에 초점을 맞춥니다.\n",
+        "\n",
+        "PyFlink를 설치하려면 단순한 `pip install`이 아니라, Java(JVM)와 Python 사이의\n",
+        "**C 브릿지 컴파일**이 필요합니다. 이 복잡한 과정을 Docker로 깔끔하게 해결합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "4c613adc",
+      "metadata": {
+        "id": "4c613adc"
+      },
+      "source": [
+        "### 1.1 단일 Dockerfile 해설\n",
+        "\n",
+        "\"도대체 왜 이렇게 복잡해?\" — PyFlink 빌드의 3가지 핵심 포인트를 풀어봅니다.\n",
+        "\n",
+        "**① 왜 `FROM python`이 아니라 `FROM flink`인가?**\n",
+        "\n",
+        "일반적인 Python 앱에서는 Python이 주인이고, 필요한 라이브러리를 가져옵니다.\n",
+        "하지만 PyFlink에서는 **Java(JVM)가 주인**이고, Python은 \"얹혀사는\" 구조입니다.\n",
+        "\n",
+        "Flink는 거대한 분산 처리 시스템으로, 클러스터 관리나 메모리 처리가 전부 Java/Scala로\n",
+        "작성되어 있습니다. 그래서 \"Python 이미지에 Java를 설치하는 것\"보다\n",
+        "**\"이미 완벽하게 세팅된 Flink(Java) 이미지에 Python을 끼워 넣는 것\"**이 훨씬 안정적입니다.\n",
+        "\n",
+        "**② `build-essential`(gcc)과 `python3-dev`는 왜 필요한가?**\n",
+        "\n",
+        "단순한 Python 라이브러리가 아니기 때문입니다.\n",
+        "PyFlink가 실행될 때, Python 코드는 Java(JVM)와 실시간으로 데이터를 주고받아야 합니다.\n",
+        "이때 **Pemja** 같은 기술을 쓰는데, 이건 Python과 Java 사이를 이어주는 **다리(Bridge)** 역할을 합니다.\n",
+        "이 다리는 **C/C++**로 만들어져 있습니다. 즉, `pip install apache-flink`를 하는 순간,\n",
+        "내부적으로는 **\"C 코드를 컴파일해서 다리를 짓는 공사\"**가 일어납니다.\n",
+        "공사를 하려니 **공구(gcc 컴파일러)**와 **재료(python-dev 헤더)**가 반드시 필요한 것입니다.\n",
+        "\n",
+        "**③ 가장 이해 안 가는 부분: `default-jdk`와 `JAVA_HOME` 변경**\n",
+        "\n",
+        "\"Java 깔려 있다며? 근데 왜 또 JDK를 깔고 경로를 바꿔?\"\n",
+        "\n",
+        "- **Flink 기본 이미지의 상태 (JRE)**: \"실행(Run)\"에 최적화. 자동차로 치면 **운전석만 있는 상태(JRE)**\n",
+        "- **PyFlink 설치의 요구사항**: \"다리 공사(컴파일)\"를 하려면 Java의 내부 부품 규격서(`jni.h`)가 필요.\n",
+        "  이 규격서는 **공장(JDK)**에만 있음\n",
+        "- **해결책**: `apt-get install default-jdk`로 임시 공장 설치 →\n",
+        "  `JAVA_HOME=/usr/lib/jvm/default-java`로 설치할 때만 공장(JDK 경로)을 보도록 지정\n",
+        "\n",
+        "만약 이 설정을 안 하면, 설치 프로그램은 운전석(JRE)에서 부품 규격서를 찾다가\n",
+        "\"파일이 없는데요?\" 하고 에러를 뱉게 됩니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "608204d1",
+      "metadata": {
+        "id": "608204d1"
+      },
+      "source": [
+        "### 단일 Dockerfile 코드\n",
+        "\n",
+        "```dockerfile\n",
+        "# 1. Base Image: Flink 공식 이미지 사용 (Java 기반)\n",
+        "FROM flink:latest\n",
+        "\n",
+        "# 2. 패키지 설치를 위한 관리자 권한 부여\n",
+        "USER root\n",
+        "\n",
+        "# 3. 필수 의존성 설치\n",
+        "# - python3, python3-dev: Python 환경 및 개발 헤더\n",
+        "# - build-essential: PyFlink-Java 간 통신(pemja) 컴파일을 위한 gcc 포함\n",
+        "# - default-jdk: JNI 헤더(jni.h) 포함 (빌드 시 필수)\n",
+        "RUN apt-get update && apt-get install -y \\\n",
+        "    python3 \\\n",
+        "    python3-dev \\\n",
+        "    build-essential \\\n",
+        "    default-jdk \\\n",
+        "    && ln -s /usr/bin/python3 /usr/bin/python \\\n",
+        "    && rm -rf /var/lib/apt/lists/*\n",
+        "\n",
+        "# 4. 패키지 매니저 uv 설치\n",
+        "COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv\n",
+        "\n",
+        "# 5. PyFlink 설치 (핵심 빌드 과정)\n",
+        "# 설치 중에만 JAVA_HOME을 JDK 경로로 임시 지정\n",
+        "RUN JAVA_HOME=/usr/lib/jvm/default-java \\\n",
+        "    uv pip install --system --break-system-packages apache-flink\n",
+        "\n",
+        "# 6. 기본 사용자(flink)로 권한 복귀\n",
+        "USER flink\n",
+        "WORKDIR /opt/flink\n",
+        "```"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "23fe303f",
+      "metadata": {
+        "id": "23fe303f"
+      },
+      "source": [
+        "### 1.2 멀티 스테이지 빌드 (Multi-stage Build)\n",
+        "\n",
+        "![](https://labs.iximiuz.com/content/files/tutorials/docker-multi-stage-builds/__static__/multi-stage-build.png   )\n",
+        "\n",
+        "이전 설명에서 \"다리 공사(컴파일)\"를 위해 `gcc`와 `JDK`라는 **중장비**가 필요하다고 했습니다.\n",
+        "멀티 스테이지 빌드를 쓰면, **\"공사장에서는 중장비를 쓰고, 완공된 다리(이미지)만\n",
+        "헬기로 떠서 깨끗한 새 땅(Final Stage)에 옮겨 놓는 것\"**이 가능해집니다.\n",
+        "\n",
+        "**Stage 1 (Builder) — 공사 현장**\n",
+        "\n",
+        "- JDK 깔고, GCC 깔고, Python 헤더 파일들 설치\n",
+        "- `uv pip install`로 C 코드를 컴파일해서 다리를 건설\n",
+        "- 결과물은 `/opt/venv`라는 상자 안에 담김\n",
+        "\n",
+        "**COPY (이사)**\n",
+        "\n",
+        "- `COPY --from=builder /opt/venv /opt/venv`\n",
+        "- **\"공사 현장(Builder)에서 연장 챙기지 말고, 완성된 물건(venv)만 새 집으로 가져와!\"**\n",
+        "- 무거운 JDK, GCC, 소스코드 찌꺼기는 Stage 1에 버려두고 옴\n",
+        "\n",
+        "**Stage 2 (Runner) — 입주 완료**\n",
+        "\n",
+        "- 새 집에는 **Python 실행기(interpreter)**만 설치\n",
+        "- 부품을 만드는 기계(JDK/GCC)는 더 이상 필요 없음. 이미 부품(PyFlink)은 완성됨\n",
+        "\n",
+        "**결과 비교**\n",
+        "\n",
+        "| 구분 | 단일 빌드 (이전 방식) | 멀티 스테이지 빌드 (최적화) |\n",
+        "|------|----------------------|--------------------------|\n",
+        "| **포함 요소** | Python + PyFlink + **JDK** + **GCC** + **Headers** | Python + PyFlink |\n",
+        "| **이미지 크기** | 매우 큼 (JDK/GCC만으로 수백 MB 추가) | **가벼움** (필요한 것만 있음) |\n",
+        "| **빌드 속도** | 빠름 (한 번에 진행) | 비슷하거나 약간 느림 |\n",
+        "| **보안** | 컴파일러(GCC)가 있어서 해킹 시 위험 요소 | 컴파일러가 아예 없어서 더 안전 |\n",
+        "\n",
+        "**결론:** 프로덕션(실무) 환경에 배포할 목적이라면, 이 **멀티 스테이지 방식**이 정석입니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "9a548add",
+      "metadata": {
+        "id": "9a548add"
+      },
+      "source": [
+        "### 멀티 스테이지 Dockerfile 코드\n",
+        "\n",
+        "```dockerfile\n",
+        "# ==========================================\n",
+        "# [Stage 1] Builder: 공장 (빌드 도구가 다 있음)\n",
+        "# ==========================================\n",
+        "FROM flink:latest AS builder\n",
+        "\n",
+        "USER root\n",
+        "\n",
+        "# 1. 빌드용 중장비 설치 (JDK, GCC, Python Dev)\n",
+        "RUN apt-get update && apt-get install -y \\\n",
+        "    python3 \\\n",
+        "    python3-dev \\\n",
+        "    python3-venv \\\n",
+        "    build-essential \\\n",
+        "    default-jdk \\\n",
+        "    && rm -rf /var/lib/apt/lists/*\n",
+        "\n",
+        "# 2. uv 설치\n",
+        "COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv\n",
+        "\n",
+        "# 3. 가상환경 생성 및 PyFlink 설치\n",
+        "ENV VIRTUAL_ENV=/opt/venv\n",
+        "RUN python3 -m venv $VIRTUAL_ENV\n",
+        "ENV PATH=\"$VIRTUAL_ENV/bin:$PATH\"\n",
+        "\n",
+        "# 4. PyFlink 빌드 (JDK 헤더 필요)\n",
+        "RUN JAVA_HOME=/usr/lib/jvm/default-java \\\n",
+        "    uv pip install apache-flink\n",
+        "\n",
+        "# ==========================================\n",
+        "# [Stage 2] Runner: 쇼룸 (완성품만 있음)\n",
+        "# ==========================================\n",
+        "FROM flink:latest\n",
+        "\n",
+        "USER root\n",
+        "\n",
+        "# 1. 런타임 필수 요소만 설치\n",
+        "RUN apt-get update && apt-get install -y \\\n",
+        "    python3 \\\n",
+        "    && ln -s /usr/bin/python3 /usr/bin/python \\\n",
+        "    && rm -rf /var/lib/apt/lists/*\n",
+        "\n",
+        "# 2. Builder에서 조립이 끝난 라이브러리 폴더만 복사\n",
+        "COPY --from=builder /opt/venv /opt/venv\n",
+        "\n",
+        "# 3. 환경 변수 설정\n",
+        "ENV VIRTUAL_ENV=/opt/venv\n",
+        "ENV PATH=\"$VIRTUAL_ENV/bin:$PATH\"\n",
+        "\n",
+        "USER flink\n",
+        "WORKDIR /opt/flink\n",
+        "```"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "b720ec17",
+      "metadata": {
+        "id": "b720ec17"
+      },
+      "source": [
+        "<!-- IMAGE: Docker build 과정 또는 이미지 크기 비교 스크린샷 -->"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 7,
+      "id": "641d28e8",
+      "metadata": {
+        "id": "641d28e8"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "PyFlink 버전: 2.2.0\n"
+          ]
+        }
+      ],
+      "source": [
+        "# PyFlink 설치 확인\n",
+        "import pyflink\n",
+        "print(f\"PyFlink 버전: {pyflink.__version__}\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 8,
+      "id": "1de0f049",
+      "metadata": {
+        "id": "1de0f049",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "모든 모듈이 성공적으로 import 되었습니다!\n"
+          ]
+        }
+      ],
+      "source": [
+        "# 공통 import\n",
+        "import json\n",
+        "from typing import Iterable\n",
+        "\n",
+        "# DataStream API imports\n",
+        "from pyflink.common import Types, WatermarkStrategy, Time, Encoder, Row, Duration\n",
+        "from pyflink.common.time import Instant\n",
+        "from pyflink.common.watermark_strategy import TimestampAssigner\n",
+        "from pyflink.datastream import StreamExecutionEnvironment, RuntimeExecutionMode\n",
+        "from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext\n",
+        "from pyflink.datastream.state import ValueStateDescriptor, StateTtlConfig\n",
+        "\n",
+        "# Table API imports\n",
+        "from pyflink.table import (\n",
+        "    TableEnvironment, StreamTableEnvironment, EnvironmentSettings,\n",
+        "    TableDescriptor, Schema, DataTypes, FormatDescriptor\n",
+        ")\n",
+        "from pyflink.table.expressions import col, lit, row_interval, CURRENT_ROW\n",
+        "from pyflink.table.udf import udf, udtf, udaf\n",
+        "from pyflink.table.window import Tumble, Slide, Session, Over\n",
+        "\n",
+        "print(\"모든 모듈이 성공적으로 import 되었습니다!\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "4b74b8ce",
+      "metadata": {
+        "id": "4b74b8ce"
+      },
+      "source": [
+        "### 1.3 Flink UI 모니터링\n",
+        "\n",
+        "Flink 작업을 실행하면 로컬 대시보드(기본값: http://localhost:8081)를 통해\n",
+        "작업의 진행 상황을 모니터링할 수 있습니다.\n",
+        "\n",
+        "- **Jobs**: 현재 실행 중인 Job과 완료된 Job의 상태(Running, Finished, Failed 등) 확인\n",
+        "- **Visualized Graph**: 작성한 코드가 어떻게 실행 파이프라인으로 구성되었는지 시각화\n",
+        "- **Task Metrics**: 각 연산자별 처리 데이터 개수, 처리량, 지연 시간 확인\n",
+        "- **Exceptions**: 작업 실패 시 원인이 되는 Stacktrace 상세 확인\n",
+        "- **Watermarks**: 이벤트 시간 기반 처리 시 Watermark 갱신 상태 확인\n",
+        "- **Checkpoints**: 상태 관리 사용 시 체크포인트 수행 여부 및 상태 크기 모니터링\n",
+        "\n",
+        "<!-- IMAGE: Flink Web UI 대시보드 스크린샷 -->"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "413f1f77",
+      "metadata": {
+        "id": "413f1f77"
+      },
+      "source": [
+        "### 📝 FAQ\n",
+        "\n",
+        "**Q. `my-pyflink-image`는 어떻게 빌드하나요?**\n",
+        "\n",
+        "> 위 Dockerfile을 `Dockerfile`이라는 이름으로 저장한 뒤, 터미널에서\n",
+        "> `docker build -t my-pyflink-image .` 명령을 실행하면 됩니다.\n",
+        "> 멀티 스테이지 버전은 `Dockerfile.Multi`로 저장해서 별도 빌드할 수 있습니다.\n",
+        "\n",
+        "**Q. 멀티스테이지 빌드를 꼭 써야 하나요?**\n",
+        "\n",
+        "> 학습 단계에서는 단일 빌드로 충분합니다. 프로덕션 배포 시에는 이미지 크기와 보안을\n",
+        "> 위해 멀티 스테이지 빌드를 권장합니다. 단일 빌드 대비 수백 MB의 용량을 절약할 수 있습니다.\n",
+        "\n",
+        "**Q. Flink UI는 어디서 보나요?**\n",
+        "\n",
+        "> Docker로 Flink 클러스터를 실행하면 기본적으로 `http://localhost:8081`에서\n",
+        "> Web UI에 접근할 수 있습니다. `compose.yml`에서 포트 매핑을 확인하세요.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "### 🏋️ 실습\n",
+        "\n",
+        "제공된 Dockerfile로 이미지를 빌드한 후, `docker images` 명령으로\n",
+        "단일 빌드와 멀티 스테이지 빌드의 이미지 크기 차이를 확인해 보세요.\n",
+        "\n",
+        "```bash\n",
+        "# 단일 빌드\n",
+        "docker build -t pyflink-single -f Dockerfile .\n",
+        "\n",
+        "# 멀티 스테이지 빌드\n",
+        "docker build -t pyflink-multi -f Dockerfile.Multi .\n",
+        "\n",
+        "# 크기 비교\n",
+        "docker images | grep pyflink\n",
+        "```"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "48d85b28",
+      "metadata": {
+        "id": "48d85b28"
+      },
+      "source": [
+        "---\n",
+        "## 2. 고차함수 — DataStream API를 위한 준비\n",
+        "\n",
+        "### 왜 갑자기 \"고차함수\"를 알아야 할까?\n",
+        "\n",
+        "Spark를 사용하셨다면 아마 이런 코드가 가장 익숙하실 겁니다.\n",
+        "\n",
+        "```python\n",
+        "# Spark DataFrame API — 우리가 익숙한 방식\n",
+        "df.select(\"name\", \"price\") \\\n",
+        "  .filter(col(\"price\") > 20000) \\\n",
+        "  .groupBy(\"category\") \\\n",
+        "  .agg(sum(\"price\"))\n",
+        "```\n",
+        "\n",
+        "DataFrame API는 **\"무엇을 원하는지\"만 선언**하면 Spark 엔진이 알아서\n",
+        "실행 계획을 짜주는 방식입니다. 내부적으로 어떤 순서로 돌아가는지,\n",
+        "데이터를 한 건씩 어떻게 처리하는지 신경 쓸 필요가 없었습니다.\n",
+        "\n",
+        "그런데 Flink의 DataStream API로 오면 분위기가 달라집니다.\n",
+        "\n",
+        "```python\n",
+        "# Flink DataStream API — 앞으로 배울 방식\n",
+        "ds.flat_map(split) \\\n",
+        "  .map(lambda i: (i, 1)) \\\n",
+        "  .key_by(lambda i: i[0]) \\\n",
+        "  .reduce(lambda i, j: (i[0], i[1] + j[1]))\n",
+        "```\n",
+        "\n",
+        "언뜻 비슷해 보이지만, 결정적인 차이가 하나 있습니다.\n",
+        "`map()` 안에 **컬럼 이름이 아니라 \"함수\"가 들어가 있다**는 것입니다.\n",
+        "이 함수를 매개변수로 넘기는 방식을 이해하는 것이 DataStream API의 출발점이고,\n",
+        "그 개념이 바로 **\"고차 함수(Higher-Order Function)\"**입니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "b47a6e6a",
+      "metadata": {
+        "id": "b47a6e6a"
+      },
+      "source": [
+        "### DataFrame API와 무엇이 다른가?\n",
+        "\n",
+        "차이를 가장 쉽게 보여주는 예시가 있습니다.\n",
+        "**\"가격에 10% 세금을 붙여라\"**라는 같은 작업을 두 방식으로 해보겠습니다.\n",
+        "\n",
+        "```python\n",
+        "# Spark DataFrame API 방식\n",
+        "df.withColumn(\"price_with_tax\", col(\"price\") * 1.1)\n",
+        "```\n",
+        "\n",
+        "이 코드에서 우리는 **\"어떤 컬럼에 어떤 연산을 할지\"를 표현식(Expression)으로 전달**했습니다.\n",
+        "`col(\"price\") * 1.1`은 함수가 아니라, Spark가 해석할 수 있는 \"계산 명세서\" 같은 것입니다.\n",
+        "\n",
+        "```python\n",
+        "# Flink DataStream API 방식\n",
+        "ds.map(lambda record: record * 1.1)\n",
+        "```\n",
+        "\n",
+        "이 코드에서는 **\"데이터 한 건이 들어오면 어떻게 처리할지\"를 함수로 직접 전달**했습니다.\n",
+        "`lambda record: record * 1.1`은 진짜 Python 함수입니다.\n",
+        "\n",
+        "| | Spark DataFrame API | Flink DataStream API |\n",
+        "|---|---|---|\n",
+        "| 전달하는 것 | 컬럼 표현식 (`col(\"price\") * 1.1`) | **함수** (`lambda x: x * 1.1`) |\n",
+        "| 엔진의 역할 | 표현식을 해석하고 최적화까지 담당 | 전달받은 함수를 그대로 실행 |\n",
+        "| 비유 | \"이 서류대로 처리해주세요\" (위임) | \"이 도구로 직접 깎으세요\" (직접 수행) |\n",
+        "\n",
+        "이 차이 때문에, DataStream API를 쓰려면 **\"함수를 다른 함수에 넘긴다\"**는 개념을 먼저 이해해야 합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "05014506",
+      "metadata": {
+        "id": "05014506"
+      },
+      "source": [
+        "### 먼저 기억할 것: Python에서 함수는 \"값\"이다\n",
+        "\n",
+        "고차함수를 이해하려면, 먼저 이 사실을 받아들여야 합니다.\n",
+        "\n",
+        "> **Python에서 함수는 숫자나 문자열처럼 변수에 담을 수 있는 \"값\"이다.**\n",
+        "\n",
+        "DataFrame API에서는 이런 걸 생각할 필요가 없었습니다.\n",
+        "`col(\"price\")`라는 표현식을 넘기면 끝이었으니까요.\n",
+        "하지만 DataStream API에서는 **\"함수 그 자체\"를 넘겨야** 하므로, 이 개념이 중요해집니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 9,
+      "id": "f407ea07",
+      "metadata": {
+        "id": "f407ea07",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "11000.0\n",
+            "<class 'float'>\n",
+            "\n",
+            "<function add_tax at 0x70f01526b9c0>\n",
+            "<class 'function'>\n",
+            "11000.0\n"
+          ]
+        }
+      ],
+      "source": [
+        "# 우리가 익숙한 방식: 함수를 정의하고 호출한다\n",
+        "def add_tax(price):\n",
+        "    return price * 1.1\n",
+        "\n",
+        "# 함수를 \"호출\"하면 → 결과값(숫자)을 돌려받음\n",
+        "result = add_tax(10000)\n",
+        "print(result)        # 11000.0\n",
+        "print(type(result))  # <class 'float'>\n",
+        "\n",
+        "print()\n",
+        "\n",
+        "# 함수를 호출하지 않고(괄호 없이) 변수에 담으면?\n",
+        "my_func = add_tax    # 괄호가 없다! 호출이 아님!\n",
+        "\n",
+        "print(my_func)             # <function add_tax at 0x...> ← 함수 \"객체\" 자체\n",
+        "print(type(my_func))       # <class 'function'>\n",
+        "\n",
+        "# 이 변수를 통해 나중에 호출할 수 있음\n",
+        "print(my_func(10000))      # 11000.0"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "1ed36e4b",
+      "metadata": {
+        "id": "1ed36e4b"
+      },
+      "source": [
+        "**핵심 포인트:**\n",
+        "\n",
+        "- `add_tax(10000)` → 함수를 **실행**한다. 결과는 숫자 `11000.0`\n",
+        "- `add_tax` (괄호 없음) → 함수 **그 자체**를 가리킨다. 마치 숫자 `42`처럼 변수에 담을 수 있는 \"값\"\n",
+        "\n",
+        "숫자, 문자열처럼 함수도 변수에 담고, 리스트에 넣고, **다른 함수의 매개변수로 전달**할 수 있습니다.\n",
+        "이것을 프로그래밍 용어로 **\"일급 객체(First-class Object)\"**라고 합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "348e4944",
+      "metadata": {
+        "id": "348e4944"
+      },
+      "source": [
+        "### 그래서 \"고차함수\"란 뭔가?\n",
+        "\n",
+        "정의는 간단합니다.\n",
+        "\n",
+        "> **고차함수(Higher-Order Function)**: 함수를 매개변수로 받거나, 함수를 결과로 돌려주는 함수\n",
+        "\n",
+        "DataFrame API에 비유하면 이렇습니다.\n",
+        "\n",
+        "| DataFrame API | 고차함수 |\n",
+        "|---|---|\n",
+        "| `df.filter(col(\"price\") > 20000)` | `filter(is_expensive, data)` |\n",
+        "| filter에 **조건 표현식**을 넘김 | filter에 **판별 함수**를 넘김 |\n",
+        "| \"price가 20000보다 큰 거 골라줘\" | \"이 함수가 True를 뱉는 것만 골라줘\" |\n",
+        "\n",
+        "DataFrame API에서 `.filter()` 안에 **표현식**을 넣던 것처럼,\n",
+        "DataStream API에서는 `.filter()` 안에 **함수**를 넣는 것입니다.\n",
+        "틀(frame)은 같고, 안에 채우는 재료만 다릅니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "854937d4",
+      "metadata": {
+        "id": "854937d4"
+      },
+      "source": [
+        "### 직접 만들어 보기: 고차함수의 구조\n",
+        "\n",
+        "이해를 위해, 아주 단순한 고차함수를 직접 만들어 보겠습니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 10,
+      "id": "8907638d",
+      "metadata": {
+        "id": "8907638d",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [],
+      "source": [
+        "# 고차함수: \"어떤 함수\"를 받아서, 리스트의 모든 요소에 적용한다\n",
+        "def apply_to_all(func, data):\n",
+        "    \"\"\"\n",
+        "    func: 각 요소에 적용할 함수 (매개변수로 전달받음)\n",
+        "    data: 처리할 데이터 리스트\n",
+        "    \"\"\"\n",
+        "    results = []\n",
+        "    for item in data:\n",
+        "        results.append(func(item))  # 전달받은 함수를 호출!\n",
+        "    return results"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 11,
+      "id": "3e4c379e",
+      "metadata": {
+        "id": "3e4c379e"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "세금 포함: [16500.0, 25300.000000000004, 8800.0, 46200.00000000001, 34100.0]\n",
+            "천단위 반올림: [20000, 20000, 10000, 40000, 30000]\n",
+            "가격 등급: ['일반', '일반', '일반', '고가', '고가']\n"
+          ]
+        }
+      ],
+      "source": [
+        "# apply_to_all 활용 예제\n",
+        "prices = [15000, 23000, 8000, 42000, 31000]\n",
+        "\n",
+        "# 사용법 1: 세금 포함 가격 계산\n",
+        "def add_tax(x):\n",
+        "    return x * 1.1\n",
+        "\n",
+        "result1 = apply_to_all(add_tax, prices)\n",
+        "print(f\"세금 포함: {result1}\")\n",
+        "\n",
+        "# 사용법 2: 천 단위 반올림\n",
+        "def round_to_thousand(x):\n",
+        "    return round(x, -4)   # -4 : 천 단위 나타냄(-3은 백 단위)\n",
+        "\n",
+        "result2 = apply_to_all(round_to_thousand, prices)\n",
+        "print(f\"천단위 반올림: {result2}\")\n",
+        "\n",
+        "# 사용법 3: 가격 등급 라벨 붙이기\n",
+        "def price_label(x):\n",
+        "    return \"고가\" if x >= 30000 else \"일반\"\n",
+        "\n",
+        "result3 = apply_to_all(price_label, prices)\n",
+        "print(f\"가격 등급: {result3}\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "d3eddd17",
+      "metadata": {
+        "id": "d3eddd17"
+      },
+      "source": [
+        "**같은 `apply_to_all` 함수**인데, **넘겨주는 함수만 바꿨을 뿐** 전혀 다른 결과가 나옵니다.\n",
+        "이것이 고차함수의 힘입니다.\n",
+        "\n",
+        "> 사실 `apply_to_all`은 Python 내장 함수 `map()`과 동일한 동작입니다. 뒤에서 바로 다룹니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "264d4ae8",
+      "metadata": {
+        "id": "264d4ae8"
+      },
+      "source": [
+        "### 왜 고차함수가 편한가? — 고차함수 없는 코드 vs 있는 코드\n",
+        "\n",
+        "\"그냥 for문 쓰면 되는 거 아닌가?\" 라는 의문이 들 수 있습니다.\n",
+        "맞는 말입니다. 실제로 고차함수 없이도 모든 것을 구현할 수 있습니다.\n",
+        "하지만 비교해 보면 차이가 확실합니다.\n",
+        "\n",
+        "**시나리오: 매출 데이터를 여러 가지로 가공해야 하는 상황**\n",
+        "\n",
+        "이 데이터에 대해 세 가지 작업을 해야 합니다.\n",
+        "1. 10% 세금을 붙인 가격 계산\n",
+        "2. 2만 원 이상인 것만 추출\n",
+        "3. 전체 합계 계산"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 12,
+      "id": "14d91122",
+      "metadata": {
+        "id": "14d91122"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "세금 포함: [16500.0, 25300.000000000004, 8800.0, 46200.00000000001, 34100.0]\n",
+            "2만원 이상: [23000, 42000, 31000]\n",
+            "합계: 119000\n"
+          ]
+        }
+      ],
+      "source": [
+        "# ❌ 고차함수 없이: for문을 매번 작성\n",
+        "sales = [15000, 23000, 8000, 42000, 31000]\n",
+        "\n",
+        "# 작업 1: 세금 포함 가격\n",
+        "taxed = []\n",
+        "for s in sales:\n",
+        "    taxed.append(s * 1.1)\n",
+        "print(f\"세금 포함: {taxed}\")\n",
+        "\n",
+        "# 작업 2: 2만 원 이상 필터링\n",
+        "expensive = []\n",
+        "for s in sales:\n",
+        "    if s >= 20000:\n",
+        "        expensive.append(s)\n",
+        "print(f\"2만원 이상: {expensive}\")\n",
+        "\n",
+        "# 작업 3: 합계\n",
+        "total = 0\n",
+        "for s in sales:\n",
+        "    total = total + s\n",
+        "print(f\"합계: {total}\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 13,
+      "id": "960a1725",
+      "metadata": {
+        "id": "960a1725",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "세금 포함: [16500.0, 25300.000000000004, 8800.0, 46200.00000000001, 34100.0]\n",
+            "2만원 이상: [23000, 42000, 31000]\n",
+            "합계: 119000\n"
+          ]
+        }
+      ],
+      "source": [
+        "# ✅ 고차함수 사용: 의도가 드러나는 코드\n",
+        "from functools import reduce\n",
+        "\n",
+        "sales = [15000, 23000, 8000, 42000, 31000]\n",
+        "\n",
+        "# 작업 1: 세금 포함 가격 → map (1대1 변환)\n",
+        "taxed = list(map(lambda s: s * 1.1, sales))\n",
+        "print(f\"세금 포함: {taxed}\")\n",
+        "\n",
+        "# 작업 2: 2만 원 이상 필터링 → filter (조건 선택)\n",
+        "expensive = list(filter(lambda s: s >= 20000, sales))\n",
+        "print(f\"2만원 이상: {expensive}\")\n",
+        "\n",
+        "# 작업 3: 합계 → reduce (집계)\n",
+        "total = reduce(lambda acc, s: acc + s, sales)\n",
+        "print(f\"합계: {total}\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "962f6d84",
+      "metadata": {
+        "id": "962f6d84"
+      },
+      "source": [
+        "결과는 완전히 동일합니다. 하지만 코드를 읽는 경험이 다릅니다.\n",
+        "\n",
+        "| 비교 항목 | for문 반복 | 고차함수 |\n",
+        "|---|---|---|\n",
+        "| 의도 파악 | 코드 내부를 읽어야 알 수 있음 | `map`=변환, `filter`=선택, `reduce`=집계 → **함수 이름만으로 파악** |\n",
+        "| 코드 양 | 각 작업마다 3~4줄 | 각 작업마다 1줄 |\n",
+        "| 반복 구조 | `for`, 빈 리스트, `append` 패턴 반복 | 반복 로직은 고차함수 내부에 숨겨짐 |\n",
+        "| 실수 가능성 | 변수명 오타, append 누락 등 | \"무엇을 할지\"만 정의하므로 실수가 줄어듦 |\n",
+        "\n",
+        "그리고 이 고차함수 버전을 다시 한번 보면, DataFrame API와 구조가 닮았다는 것을 느끼실 수 있습니다.\n",
+        "\n",
+        "```python\n",
+        "# 고차함수 (Python)\n",
+        "list(map(lambda s: s * 1.1, sales))\n",
+        "list(filter(lambda s: s >= 20000, sales))\n",
+        "\n",
+        "# DataFrame API (Spark) — 전달하는 것만 \"함수\" 대신 \"표현식\"\n",
+        "df.withColumn(\"taxed\", col(\"price\") * 1.1)\n",
+        "df.filter(col(\"price\") >= 20000)\n",
+        "```\n",
+        "\n",
+        "`map`/`filter`라는 **같은 이름의 틀**에, DataFrame은 **표현식**을,\n",
+        "DataStream은 **함수**를 넣는 것뿐입니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "82ee4f63",
+      "metadata": {
+        "id": "82ee4f63"
+      },
+      "source": [
+        "### 잠깐, `lambda`는 뭔가요?\n",
+        "\n",
+        "위 코드에서 갑자기 `lambda`가 등장했습니다. 어렵게 생각할 필요 없습니다.\n",
+        "\n",
+        "> **`lambda`는 이름 없는 1회용 함수입니다.**\n",
+        "> \"이름 붙일 정도는 아닌 간단한 함수\"를 그 자리에서 바로 만들 때 사용합니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 14,
+      "id": "04047395",
+      "metadata": {
+        "id": "04047395"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "일반 함수: [16500.0, 25300.000000000004, 8800.0, 46200.00000000001, 34100.0]\n",
+            "lambda:    [16500.0, 25300.000000000004, 8800.0, 46200.00000000001, 34100.0]\n",
+            "동일한가?  True\n"
+          ]
+        }
+      ],
+      "source": [
+        "# 이 두 코드는 완전히 동일합니다\n",
+        "\n",
+        "# 방법 1: 일반 함수로 정의\n",
+        "def add_tax(s):\n",
+        "    return s * 1.1\n",
+        "\n",
+        "result1 = list(map(add_tax, sales))\n",
+        "\n",
+        "# 방법 2: lambda로 즉석 정의\n",
+        "result2 = list(map(lambda s: s * 1.1, sales))\n",
+        "\n",
+        "# result1과 result2는 같은 결과\n",
+        "print(f\"일반 함수: {result1}\")\n",
+        "print(f\"lambda:    {result2}\")\n",
+        "print(f\"동일한가?  {result1 == result2}\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "ff945d53",
+      "metadata": {
+        "id": "ff945d53"
+      },
+      "source": [
+        "`lambda s: s * 1.1`은 \"매개변수 `s`를 받아서 `s * 1.1`을 돌려주는 함수\"입니다.\n",
+        "`def`로 이름을 붙이기엔 너무 단순할 때 편리합니다.\n",
+        "고차함수와 자주 함께 쓰이니 눈에 익혀두시면 좋습니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "5856ba2f",
+      "metadata": {
+        "id": "5856ba2f"
+      },
+      "source": [
+        "### 고차함수가 Flink에서 왜 중요한가?\n",
+        "\n",
+        "이제 핵심입니다. Flink의 DataStream API는 이런 식으로 동작합니다.\n",
+        "\n",
+        "> 데이터 스트림 → `map`(변환) → `filter`(선택) → `key_by`(그룹핑) → `reduce`(집계) → 결과\n",
+        "\n",
+        "DataFrame API에서 `.select().filter().groupBy().agg()`로 체이닝하던 것을 기억하시나요?\n",
+        "DataStream API도 똑같이 체이닝합니다. 다만 각 단계에 **표현식 대신 함수**를 넣는 것뿐입니다.\n",
+        "\n",
+        "즉, 고차함수는 **데이터가 흐르는 파이프라인의 각 단계에서 \"무엇을 할지\"를 정의하는 도구**입니다.\n",
+        "\n",
+        "Python의 기본 기능과 `functools`를 이용해, 하나씩 직접 실행 가능한 예제로 살펴보겠습니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "b1f90db7",
+      "metadata": {
+        "id": "b1f90db7"
+      },
+      "source": [
+        "### 2.1 `map`: 1대1 변환 (Transformation)\n",
+        "\n",
+        "데이터를 하나 받아서, 다른 형태로 하나 배출합니다.\n",
+        "\n",
+        "- **Spark SQL 비유**: `SELECT` 절에서 컬럼 값을 변경하는 것 (예: `SELECT price * 1.1 ...`)"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 15,
+      "id": "2d05a34a",
+      "metadata": {
+        "id": "2d05a34a"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "원본: [1, 2, 3, 4, 5]\n",
+            "결과: [1, 4, 9, 16, 25]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# map 예제: 리스트의 모든 요소를 제곱\n",
+        "data = [1, 2, 3, 4, 5]\n",
+        "\n",
+        "def square(x):\n",
+        "    return x * x\n",
+        "\n",
+        "# map(함수, 데이터) → 모든 요소에 함수 적용\n",
+        "mapped_data = list(map(square, data))\n",
+        "\n",
+        "print(f\"원본: {data}\")\n",
+        "print(f\"결과: {mapped_data}\")\n",
+        "# Flink에서의 활용: 들어온 메시지(String)를 JSON으로 파싱하거나, 필드 값을 수정할 때 사용"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 16,
+      "id": "23d1ba17",
+      "metadata": {},
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "<map object at 0x70f01408e1d0>\n"
+          ]
+        }
+      ],
+      "source": [
+        "mapped_data = map(square, data)\n",
+        "print(mapped_data)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "1fd0082f",
+      "metadata": {
+        "id": "1fd0082f"
+      },
+      "source": [
+        "### 2.2 `filter`: 조건에 따른 선택 (Selection)\n",
+        "\n",
+        "데이터를 하나 받아서, 조건이 `True`면 남기고 `False`면 버립니다.\n",
+        "\n",
+        "- **Spark SQL 비유**: `WHERE` 절과 완전히 동일합니다 (예: `WHERE age > 20`)"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 17,
+      "id": "c6e90cc3",
+      "metadata": {
+        "id": "c6e90cc3"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "원본: [1, 2, 3, 4, 5, 6]\n",
+            "결과: [2, 4, 6]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# filter 예제: 짝수만 선택\n",
+        "data = [1, 2, 3, 4, 5, 6]\n",
+        "\n",
+        "def is_even(x):\n",
+        "    return x % 2 == 0\n",
+        "\n",
+        "# filter(함수, 데이터) → True인 것만 남김\n",
+        "filtered_data = list(filter(is_even, data))\n",
+        "\n",
+        "print(f\"원본: {data}\")\n",
+        "print(f\"결과: {filtered_data}\")\n",
+        "# Flink에서의 활용: 불필요한 로그를 제외하거나, 특정 에러 코드만 골라낼 때 사용"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "e861b98c",
+      "metadata": {
+        "id": "e861b98c"
+      },
+      "source": [
+        "### 2.3 `reduce`: 집계 (Aggregation)\n",
+        "\n",
+        "여러 개의 데이터를 순차적으로 합쳐서 하나의 결과로 만듭니다.\n",
+        "\n",
+        "- **Spark SQL 비유**: `GROUP BY` 후 사용하는 `SUM`, `MAX`, `MIN` 등의 집계 함수\n",
+        "\n",
+        "`reduce`는 두 개의 인자를 받는 함수가 필요합니다.\n",
+        "`(누적값, 현재값) -> 새로운 누적값` 형태로 작동합니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 18,
+      "id": "401cdff1",
+      "metadata": {
+        "id": "401cdff1"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "  누적값: 1, 현재값: 2 -> 합계: 3\n",
+            "  누적값: 3, 현재값: 3 -> 합계: 6\n",
+            "  누적값: 6, 현재값: 4 -> 합계: 10\n",
+            "  누적값: 10, 현재값: 5 -> 합계: 15\n",
+            "최종 결과: 15\n"
+          ]
+        }
+      ],
+      "source": [
+        "from functools import reduce\n",
+        "\n",
+        "# reduce 예제: 리스트의 합계\n",
+        "data = [1, 2, 3, 4, 5]\n",
+        "\n",
+        "def add(acc, current):\n",
+        "    print(f\"  누적값: {acc}, 현재값: {current} -> 합계: {acc + current}\")\n",
+        "    return acc + current\n",
+        "\n",
+        "# reduce(함수, 데이터) → 하나의 값으로 줄임\n",
+        "result = reduce(add, data)\n",
+        "print(f\"최종 결과: {result}\")\n",
+        "# Flink에서의 활용: key_by(그룹핑) 이후에 각 그룹별 합계나 최대값을 누적할 때 사용"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 19,
+      "id": "77a74032",
+      "metadata": {},
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "  누적값: 1, 현재값: 2 -> 합계: 2\n",
+            "  누적값: 2, 현재값: 3 -> 합계: 6\n",
+            "  누적값: 6, 현재값: 4 -> 합계: 24\n",
+            "  누적값: 24, 현재값: 5 -> 합계: 120\n",
+            "최종 결과: 120\n"
+          ]
+        }
+      ],
+      "source": [
+        "from functools import reduce\n",
+        "\n",
+        "# reduce 예제: 리스트의 합계\n",
+        "data = [1, 2, 3, 4, 5]\n",
+        "\n",
+        "def add(acc, current):\n",
+        "    print(f\"  누적값: {acc}, 현재값: {current} -> 합계: {acc * current}\")\n",
+        "    return acc * current\n",
+        "\n",
+        "# reduce(함수, 데이터) → 하나의 값으로 줄임\n",
+        "result = reduce(add, data)\n",
+        "print(f\"최종 결과: {result}\")\n",
+        "# Flink에서의 활용: key_by(그룹핑) 이후에 각 그룹별 합계나 최대값을 누적할 때 사용"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "78a2a922",
+      "metadata": {
+        "id": "78a2a922"
+      },
+      "source": [
+        "### 2.4 `flatMap`: 1대다 변환 (Flattening)\n",
+        "\n",
+        "이것이 가장 헷갈릴 수 있는 개념입니다.\n",
+        "`map`과 비슷하지만, **결과가 리스트가 아니라 요소들의 나열(Stream)**로 펼쳐집니다.\n",
+        "1개의 입력이 0개, 1개, 혹은 여러 개의 결과가 될 수 있습니다.\n",
+        "\n",
+        "- **Spark SQL 비유**: `EXPLODE` 함수와 같습니다. 배열을 행(Row)으로 쪼갤 때 사용합니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 20,
+      "id": "3f7bb196",
+      "metadata": {
+        "id": "3f7bb196"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "map 결과   : [['Hello', 'World'], ['Flink', 'Python']]\n",
+            "flatMap 결과: ['Hello', 'World', 'Flink', 'Python']\n"
+          ]
+        }
+      ],
+      "source": [
+        "# flatMap 개념 예제: map vs flatMap 비교\n",
+        "sentences = [\"Hello World\", \"Flink Python\"]\n",
+        "\n",
+        "# 함수 정의: 문장을 단어 리스트로 쪼갬\n",
+        "def split_sentence(sentence):\n",
+        "    return sentence.split()\n",
+        "\n",
+        "# 일반 map을 쓰면? → 리스트 안에 리스트가 생김 (2차원)\n",
+        "mapped = list(map(split_sentence, sentences))\n",
+        "print(f\"map 결과   : {mapped}\")\n",
+        "\n",
+        "# flatMap 개념 적용: 리스트를 벗겨내고 납작하게(Flat) 만듦\n",
+        "flat_mapped = [word for sentence in sentences for word in split_sentence(sentence)]\n",
+        "print(f\"flatMap 결과: {flat_mapped}\")\n",
+        "# Flink에서의 활용: WordCount에서 문장 한 줄을 받아서 여러 개의 단어로 쪼갤 때 필수"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "9d55ed3d",
+      "metadata": {
+        "id": "9d55ed3d"
+      },
+      "source": [
+        "### Flink 코드 다시 보기\n",
+        "\n",
+        "이제 앞서 보신 Flink 코드가 SQL로 어떻게 해석되는지 보이실 겁니다.\n",
+        "\n",
+        "| Flink DataStream | SQL 대응 | 설명 |\n",
+        "|---|---|---|\n",
+        "| `ds.flat_map(split)` | `EXPLODE(SPLIT(line, ' '))` | 문장을 단어로 쪼개서 행으로 만듦 |\n",
+        "| `.map(lambda i: (i, 1))` | `SELECT word, 1` | 단어 옆에 숫자 1을 붙임 |\n",
+        "| `.key_by(lambda i: i[0])` | `GROUP BY word` | 단어 기준으로 모음 |\n",
+        "| `.reduce(lambda i, j: ...)` | `SUM(count)` | 1들을 계속 더함 |\n",
+        "\n",
+        "**Spark SQL로 표현한다면:**\n",
+        "\n",
+        "```sql\n",
+        "SELECT word, SUM(1)\n",
+        "FROM (\n",
+        "    SELECT EXPLODE(SPLIT(line, ' ')) as word\n",
+        "    FROM source_table\n",
+        ")\n",
+        "GROUP BY word\n",
+        "```\n",
+        "\n",
+        "이 흐름을 이해하시면 Flink의 DataStream API 작성이 훨씬 수월해지실 겁니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "3463e047",
+      "metadata": {
+        "id": "3463e047"
+      },
+      "source": [
+        "### 📝 FAQ\n",
+        "\n",
+        "**Q. list comprehension이 더 Pythonic 아닌가요?**\n",
+        "\n",
+        "> 맞습니다. 순수 Python에서는 `[s * 1.1 for s in sales]`가 더 자연스럽습니다.\n",
+        "> 하지만 Flink DataStream API에서는 `ds.map(lambda s: s * 1.1)` 형태를\n",
+        "> 사용해야 하므로, `map`/`filter` 패턴에 익숙해지는 것이 목적입니다.\n",
+        "\n",
+        "**Q. `reduce`는 Python에서 잘 안 쓰는데 왜 배우나요?**\n",
+        "\n",
+        "> Python에서는 `sum()`, `max()` 같은 내장 함수가 있어서 `reduce`를 직접 쓸 일이 적습니다.\n",
+        "> 하지만 Flink의 `key_by().reduce()`는 **스트림에서 실시간 집계**를 수행하는 핵심 패턴입니다.\n",
+        "> 데이터가 무한히 흐르는 상황에서는 \"미리 모아서 sum()\"을 쓸 수 없기 때문에,\n",
+        "> 하나씩 들어올 때마다 누적하는 `reduce` 패턴이 필수적입니다.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "### 🏋️ 실습\n",
+        "\n",
+        "아래 매출 데이터에서 `map`, `filter`, `reduce`를 조합하여\n",
+        "**2만 원 이상인 매출에 10% 세금을 붙인 총합**을 구해 보세요.\n",
+        "\n",
+        "```python\n",
+        "from functools import reduce\n",
+        "sales = [15000, 23000, 8000, 42000, 31000]\n",
+        "\n",
+        "# 1. filter: 2만 원 이상만 선택\n",
+        "# 2. map: 10% 세금 적용\n",
+        "# 3. reduce: 총합 계산\n",
+        "# 예상 결과: (23000 + 42000 + 31000) * 1.1 = 105600.0\n",
+        "```"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 21,
+      "id": "8036960f",
+      "metadata": {},
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "[23000, 42000, 31000]\n",
+            "105600.00000000001\n"
+          ]
+        }
+      ],
+      "source": [
+        "from functools import reduce\n",
+        "sales = [15000, 23000, 8000, 42000, 31000]\n",
+        "\n",
+        "# 1. filter: 2만 원 이상만 선택\n",
+        "filtered = list(filter(lambda x : x >= 20000, sales))\n",
+        "print(filtered)\n",
+        "\n",
+        "# 2. map: 10% 세금 적용\n",
+        "taxed = map(lambda x : x * 1.1, filtered)\n",
+        "# print(list(taxed))\n",
+        "\n",
+        "# 3. reduce: 총합 계산\n",
+        "# acc : 누적값, cur : 현재값\n",
+        "# reduce(lambda acc, cur:acc + cur, taxed)\n",
+        "total = reduce(lambda x, y : x + y , taxed)\n",
+        "print(total)\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 22,
+      "id": "67d93d73",
+      "metadata": {},
+      "outputs": [
+        {
+          "data": {
+            "text/plain": [
+              "105600.00000000001"
+            ]
+          },
+          "execution_count": 22,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "from functools import reduce\n",
+        "sales = [15000, 23000, 8000, 42000, 31000]\n",
+        "\n",
+        "# 1. filter: 2만 원 이상만 선택\n",
+        "# 함수 사용 ver\n",
+        "def is_high(s):\n",
+        "    return s >= 20000\n",
+        "\n",
+        "filtered = list(filter(is_high, sales))\n",
+        "# filtered\n",
+        "\n",
+        "# 2. map: 10% 세금 적용\n",
+        "def tax(s):\n",
+        "    return s * 1.1\n",
+        "\n",
+        "taxed = list(map(tax, filtered))\n",
+        "# taxed\n",
+        "\n",
+        "# 3. reduce: 총합 계산\n",
+        "# acc : 누적값, cur : 현재값\n",
+        "result = reduce(lambda acc, cur:acc + cur, taxed)\n",
+        "result"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 23,
+      "id": "c33760d1",
+      "metadata": {},
+      "outputs": [
+        {
+          "data": {
+            "text/plain": [
+              "[15000, 23000, 8000, 42000, 31000]"
+            ]
+          },
+          "execution_count": 23,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "[s for s in sales]"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 24,
+      "id": "317e7c79",
+      "metadata": {},
+      "outputs": [
+        {
+          "data": {
+            "text/plain": [
+              "[23000, 42000, 31000]"
+            ]
+          },
+          "execution_count": 24,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "[s for s in sales if s >= 20000]"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 25,
+      "id": "ab974b55",
+      "metadata": {},
+      "outputs": [
+        {
+          "data": {
+            "text/plain": [
+              "[25300, 46200, 34100]"
+            ]
+          },
+          "execution_count": 25,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "[round(s * 1.1) for s in sales if s >= 20000]"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 26,
+      "id": "4ccac7f3",
+      "metadata": {},
+      "outputs": [
+        {
+          "data": {
+            "text/plain": [
+              "105600"
+            ]
+          },
+          "execution_count": 26,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "sum(round(s * 1.1) for s in sales if s >= 20000) "
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "c1188852",
+      "metadata": {
+        "id": "c1188852"
+      },
+      "source": [
+        "---\n",
+        "## 3. DataStream API\n",
+        "\n",
+        "DataStream API는 Flink의 저수준 API로, 스트림 처리의 핵심 구성 요소인\n",
+        "**상태(State)**와 **시간(Time)**에 대한 세밀한 제어가 가능합니다.\n",
+        "\n",
+        "| 구분 | Spark Structured Streaming | Apache Flink |\n",
+        "|------|---------------------------|--------------|\n",
+        "| 처리 모델 | 마이크로 배치 (micro-batch) | 진정한 스트림 (true streaming) |\n",
+        "| 지연시간 | 수백 ms ~ 수 초 | 수 ms ~ 수십 ms |\n",
+        "| 상태 관리 | Checkpoint 기반 | 내장 State Backend |\n",
+        "| API | DataFrame/Dataset 중심 | DataStream/Table API |"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "b0371625",
+      "metadata": {
+        "id": "b0371625"
+      },
+      "source": [
+        "### 3.1 StreamExecutionEnvironment\n",
+        "\n",
+        "Spark에서 `SparkSession`을 먼저 생성하듯, Flink에서는 **`StreamExecutionEnvironment`**를\n",
+        "먼저 생성합니다. 이것이 Flink 프로그램의 진입점입니다.\n",
+        "\n",
+        "**실행 모드:**\n",
+        "- `RuntimeExecutionMode.STREAMING`: 실시간 스트림 처리 (기본값)\n",
+        "- `RuntimeExecutionMode.BATCH`: 배치 처리 (유한한 데이터셋)\n",
+        "\n",
+        "Spark에서 `trigger(once=True)`로 배치처럼 실행하는 것과 비슷하게,\n",
+        "Flink도 하나의 API로 배치와 스트림을 모두 처리할 수 있습니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 27,
+      "id": "3aeeb094",
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "from pyflink.datastream import StreamExecutionEnvironment"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 28,
+      "id": "3b562c06",
+      "metadata": {
+        "id": "3b562c06"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "StreamExecutionEnvironment 생성 완료\n",
+            "병렬성: 1\n"
+          ]
+        }
+      ],
+      "source": [
+        "# 실행 환경 생성 (Spark의 SparkSession과 유사)\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "\n",
+        "# 병렬성 설정 (로컬 테스트에서는 1로 설정)\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "print(\"StreamExecutionEnvironment 생성 완료\")\n",
+        "print(f\"병렬성: {env.get_parallelism()}\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "a0b296c5",
+      "metadata": {
+        "id": "a0b296c5"
+      },
+      "source": [
+        "### 3.2 Word Count — DataStream API의 \"Hello World\"\n",
+        "\n",
+        "Word Count는 분산 처리 시스템의 대표적인 예제입니다.\n",
+        "이 예제를 통해 `flat_map`, `map`, `key_by`, `reduce` 연산을 학습합니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 29,
+      "id": "f352471e",
+      "metadata": {
+        "id": "f352471e"
+      },
+      "outputs": [],
+      "source": [
+        "# 예제 데이터 (셰익스피어의 햄릿 일부)\n",
+        "word_count_data = [\n",
+        "    \"To be, or not to be,--that is the question:--\",\n",
+        "    \"Whether 'tis nobler in the mind to suffer\",\n",
+        "    \"The slings and arrows of outrageous fortune\",\n",
+        "    \"Or to take arms against a sea of troubles,\"\n",
+        "]"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 30,
+      "id": "58449f66",
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "from pyflink.datastream import RuntimeExecutionMode\n",
+        "from pyflink.common import Types\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 31,
+      "id": "a8968256",
+      "metadata": {
+        "id": "a8968256"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "(a,1)\n",
+            "(Or,1)\n",
+            "(To,1)\n",
+            "(in,1)\n",
+            "(is,1)\n",
+            "(of,2)\n",
+            "(or,1)\n",
+            "(to,3)\n",
+            "(The,1)\n",
+            "(and,1)\n",
+            "(be,,1)\n",
+            "(not,1)\n",
+            "(sea,1)\n",
+            "(the,2)\n",
+            "('tis,1)\n",
+            "(arms,1)\n",
+            "(mind,1)\n",
+            "(take,1)\n",
+            "(arrows,1)\n",
+            "(nobler,1)\n",
+            "(slings,1)\n",
+            "(suffer,1)\n",
+            "(Whether,1)\n",
+            "(against,1)\n",
+            "(fortune,1)\n",
+            "(be,--that,1)\n",
+            "(troubles,,1)\n",
+            "(outrageous,1)\n",
+            "(question:--,1)\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f01566dc70>"
+            ]
+          },
+          "execution_count": 31,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# Word Count 구현\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_runtime_mode(RuntimeExecutionMode.BATCH)\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "# 소스: 컬렉션에서 데이터 읽기\n",
+        "ds = env.from_collection(word_count_data)\n",
+        "\n",
+        "# 단어 분리 함수\n",
+        "# split : 문자열 받아서 단어로 쪼개서 리스트로 반환\n",
+        "# yield : 한문장 한문장 메모리에 올려서 사용 -> 전체 데이터를 한번에 메모리 저장하지 않고 필요한 순간에 하나씩 생성해서 사용\n",
+        "def split(line):\n",
+        "    yield from line.split()\n",
+        "\n",
+        "# 변환 파이프라인:\n",
+        "# 1. flat_map: 각 라인을 단어로 분리\n",
+        "# 2. map: 각 단어를 (단어, 1) 튜플로 변환\n",
+        "# 3. key_by: 단어별로 그룹화\n",
+        "# 4. reduce: 같은 단어의 카운트를 합산\n",
+        "result = ds.flat_map(split) \\\n",
+        "           .map(lambda word: (word, 1),\n",
+        "                output_type=Types.TUPLE([Types.STRING(), Types.INT()])) \\\n",
+        "           .key_by(lambda x: x[0]) \\\n",
+        "           .reduce(lambda a, b: (a[0], a[1] + b[1]))\n",
+        "\n",
+        "result.print()\n",
+        "env.execute(\"Word Count Example\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "6ba7430f",
+      "metadata": {
+        "id": "6ba7430f"
+      },
+      "source": [
+        "**단계별 데이터 흐름 분석:**\n",
+        "\n",
+        "| 단계 | 연산 | 입력 | 출력 |\n",
+        "|------|------|------|------|\n",
+        "| 1 | `flat_map(split)` | `\"To be, or not to be\"` | `\"To\"`, `\"be,\"`, `\"or\"`, `\"not\"`, `\"to\"`, `\"be\"` |\n",
+        "| 2 | `map(lambda i: (i, 1))` | `\"To\"` | `(\"To\", 1)` |\n",
+        "| 3 | `key_by(lambda i: i[0])` | `(\"to\", 1), (\"to\", 1)` | 같은 키끼리 그룹화 |\n",
+        "| 4 | `reduce(...)` | `(\"to\", 1), (\"to\", 1)` | `(\"to\", 2)` |\n",
+        "\n",
+        "**타입 힌트의 중요성:**\n",
+        "Python은 동적 타입 언어라서, Flink에게 출력 타입을 명시해줘야 합니다.\n",
+        "`output_type=Types.TUPLE([Types.STRING(), Types.INT()])`은\n",
+        "\"출력이 (문자열, 정수) 튜플\"임을 알려줍니다.\n",
+        "Spark에서는 스키마 추론이 자동으로 되는 경우가 많지만,\n",
+        "PyFlink에서는 명시적으로 지정하는 것이 좋습니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "3dbc8cbb",
+      "metadata": {
+        "id": "3dbc8cbb"
+      },
+      "source": [
+        "#### Flink 클러스터에 Job 제출하기\n",
+        "\n",
+        "위 코드는 **로컬 미니 클러스터**에서 실행됩니다.\n",
+        "Flink UI(http://localhost:8081)에서 Job을 확인하려면 `flink run` 명령어로\n",
+        "클러스터에 제출해야 합니다.\n",
+        "\n",
+        "```bash\n",
+        "# 1. Job 파일을 작성한 뒤\n",
+        "flink run -py /opt/flink/src/wordcount_job.py\n",
+        "```\n",
+        "\n",
+        "**PyFlink의 특징**: Java와 달리 `create_remote_execution_environment()`가 없어서,\n",
+        "노트북에서 직접 원격 클러스터에 연결할 수 없습니다.\n",
+        "대신 `.py` 파일로 저장 후 `flink run` 명령으로 제출합니다.\n",
+        "\n",
+        "<!-- IMAGE: Flink Web UI에서 Job 실행 상태 스크린샷 -->"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "6a9a7af3",
+      "metadata": {
+        "id": "6a9a7af3"
+      },
+      "source": [
+        "### 3.3 기본 연산: map, filter, key_by, sum\n",
+        "\n",
+        "DataStream API의 핵심 변환 연산들을 살펴봅니다.\n",
+        "\n",
+        "| Spark RDD | Flink DataStream | 설명 |\n",
+        "|-----------|------------------|------|\n",
+        "| `map()` | `map()` | 1:1 변환 |\n",
+        "| `flatMap()` | `flat_map()` | 1:N 변환 |\n",
+        "| `filter()` | `filter()` | 필터링 |\n",
+        "| `groupByKey()` | `key_by()` | 키 기준 그룹화 |\n",
+        "| `reduceByKey()` | `key_by().reduce()` | 키별 집계 |"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 32,
+      "id": "0968441a",
+      "metadata": {
+        "id": "0968441a"
+      },
+      "outputs": [],
+      "source": [
+        "# 예제 데이터: (id, JSON 문자열)\n",
+        "sample_data = [\n",
+        "    (1, '{\"name\": \"Flink\", \"tel\": 123, \"addr\": {\"country\": \"Germany\", \"city\": \"Berlin\"}}'),\n",
+        "    (2, '{\"name\": \"hello\", \"tel\": 135, \"addr\": {\"country\": \"China\", \"city\": \"Shanghai\"}}'),\n",
+        "    (3, '{\"name\": \"world\", \"tel\": 124, \"addr\": {\"country\": \"USA\", \"city\": \"NewYork\"}}'),\n",
+        "    (4, '{\"name\": \"PyFlink\", \"tel\": 32, \"addr\": {\"country\": \"China\", \"city\": \"Hangzhou\"}}')\n",
+        "]"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 33,
+      "id": "d5db2801",
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "import json\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 34,
+      "id": "888a2a45",
+      "metadata": {
+        "id": "888a2a45"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "(1, '{\"name\": \"Flink\", \"tel\": 124, \"addr\": {\"country\": \"Germany\", \"city\": \"Berlin\"}}')\n",
+            "(2, '{\"name\": \"hello\", \"tel\": 136, \"addr\": {\"country\": \"China\", \"city\": \"Shanghai\"}}')\n",
+            "(3, '{\"name\": \"world\", \"tel\": 125, \"addr\": {\"country\": \"USA\", \"city\": \"NewYork\"}}')\n",
+            "(4, '{\"name\": \"PyFlink\", \"tel\": 33, \"addr\": {\"country\": \"China\", \"city\": \"Hangzhou\"}}')\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f016658ce0>"
+            ]
+          },
+          "execution_count": 34,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# map 연산: 각 레코드의 tel 값을 1 증가\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "# 각 데이터는 data.id, data.info 구조가 됨\n",
+        "ds = env.from_collection(\n",
+        "    collection=sample_data,\n",
+        "    type_info=Types.ROW_NAMED([\"id\", \"info\"], [Types.INT(), Types.STRING()])\n",
+        ")\n",
+        "\n",
+        "def update_tel(data):\n",
+        "    json_data = json.loads(data.info)\n",
+        "    json_data['tel'] += 1\n",
+        "    return data.id, json.dumps(json_data)\n",
+        "\n",
+        "ds.map(update_tel).print()\n",
+        "env.execute(\"Map Example\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 35,
+      "id": "68198a96",
+      "metadata": {
+        "id": "68198a96"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "(1, '{\"name\": \"Flink\", \"tel\": 124, \"addr\": {\"country\": \"Germany\", \"city\": \"Berlin\"}}')\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f0166822a0>"
+            ]
+          },
+          "execution_count": 35,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# filter 연산: 조건에 맞는 레코드만 선택\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=sample_data,\n",
+        "    type_info=Types.ROW_NAMED([\"id\", \"info\"], [Types.INT(), Types.STRING()])\n",
+        ")\n",
+        "\n",
+        "def update_tel(data):\n",
+        "    json_data = json.loads(data.info)\n",
+        "    json_data['tel'] += 1\n",
+        "    return data.id, json.dumps(json_data)\n",
+        "\n",
+        "# id == 1인 것만 필터링 후 map 적용\n",
+        "ds.filter(lambda data: data.id == 1).map(update_tel).print()\n",
+        "env.execute(\"Filter Example\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 36,
+      "id": "bcd8545f",
+      "metadata": {
+        "id": "bcd8545f"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "('Germany', 123)\n",
+            "('China', 135)\n",
+            "('USA', 124)\n",
+            "('China', 167)\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f015276cc0>"
+            ]
+          },
+          "execution_count": 36,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# key_by + sum: 국가별 tel 합계\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=sample_data,\n",
+        "    type_info=Types.ROW_NAMED([\"id\", \"info\"], [Types.INT(), Types.STRING()])\n",
+        ")\n",
+        "\n",
+        "# (country, tel) 형태로 변환 후 국가별 합계\n",
+        "ds.map(lambda data: (json.loads(data.info)['addr']['country'],\n",
+        "                     json.loads(data.info)['tel'])) \\\n",
+        "  .key_by(lambda x: x[0]) \\\n",
+        "  .sum(1) \\\n",
+        "  .print()\n",
+        "env.execute(\"KeyBy Sum Example\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 37,
+      "id": "f833bbc8",
+      "metadata": {
+        "id": "f833bbc8",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "(2, {'name': 'hello', 'tel': 136, 'addr': {'country': 'China', 'city': 'Shanghai'}})\n",
+            "(4, {'name': 'PyFlink', 'tel': 33, 'addr': {'country': 'China', 'city': 'Hangzhou'}})\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f00c711e20>"
+            ]
+          },
+          "execution_count": 37,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# JSON 처리 파이프라인: 파싱 → 필터 → 출력\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=sample_data,\n",
+        "    type_info=Types.ROW_NAMED([\"id\", \"info\"], [Types.INT(), Types.STRING()])\n",
+        ")\n",
+        "\n",
+        "def parse_json(data):\n",
+        "    json_data = json.loads(data.info)\n",
+        "    json_data['tel'] += 1\n",
+        "    return data.id, json_data\n",
+        "\n",
+        "def filter_by_country(data):\n",
+        "    return \"China\" in data[1]['addr']['country']\n",
+        "\n",
+        "# China 데이터만 필터링\n",
+        "ds.map(parse_json).filter(filter_by_country).print()\n",
+        "env.execute(\"JSON Processing Example\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "68d39366",
+      "metadata": {
+        "id": "68d39366"
+      },
+      "source": [
+        "### 3.4 상태 관리 (State Management)\n",
+        "\n",
+        "Flink의 핵심 기능 중 하나인 **상태 관리**를 살펴봅니다.\n",
+        "\n",
+        "- **ValueState**: 키별로 단일 값을 저장\n",
+        "- **StateTtlConfig**: 상태의 TTL(Time-To-Live) 설정. 일정 시간이 지나면 자동 삭제\n",
+        "\n",
+        "Spark에서는 상태를 메모리(Heap)에 저장하는 것이 기본이지만,\n",
+        "Flink는 **메모리** 또는 **RocksDB(Disk)**에 저장할 수 있어\n",
+        "대용량 상태도 효율적으로 관리할 수 있습니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 38,
+      "id": "034f9f9c",
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "from pyflink.datastream import KeyedProcessFunction\n",
+        "from pyflink.datastream.state import ValueStateDescriptor\n",
+        "from pyflink.common.typeinfo import Types\n",
+        "from pyflink.datastream.functions import RuntimeContext\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 39,
+      "id": "81531391",
+      "metadata": {
+        "id": "81531391",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [],
+      "source": [
+        "# 상태 관리 예제: 사용자별 금액 합계\n",
+        "# SumFunction : key_by 이후에 동작해야 사용자별로 상태가 분리됨\n",
+        "class SumFunction(KeyedProcessFunction):\n",
+        "    \"\"\"사용자별 금액을 누적 합산하는 함수\"\"\"\n",
+        "\n",
+        "    # 상태를 저장할 변수를 선언만 해둠 -> 실제 초기화는 open()에서 함\n",
+        "    def __init__(self):\n",
+        "        self.state = None\n",
+        "\n",
+        "    def open(self, runtime_context: RuntimeContext):\n",
+        "        # 상태 디스크립터 생성\n",
+        "        # ValueState : 키별로 하나의 값만 저장하는 상태\n",
+        "        state_descriptor = ValueStateDescriptor(\"sum_state\", Types.FLOAT())\n",
+        "\n",
+        "        # TTL 설정: 1초 후 만료\n",
+        "        # OnReadAndWrite : 읽거나 쓰면 TTL이 다시 1초로 리셋됨\n",
+        "        # disable_cleanup_in_background() : 백그라운드 정리 비활성화\n",
+        "        # 종합 : 1초동안 해당 사용자의 데이터가 안들어오면 그 사용자의 누적합 상태는 삭제됨\n",
+        "        state_ttl_config = StateTtlConfig \\\n",
+        "            .new_builder(Time.seconds(1)) \\\n",
+        "            .set_update_type(StateTtlConfig.UpdateType.OnReadAndWrite) \\\n",
+        "            .disable_cleanup_in_background() \\\n",
+        "            .build()\n",
+        "        state_descriptor.enable_time_to_live(state_ttl_config)\n",
+        "\n",
+        "        # 상태 초기화\n",
+        "        # 이제 key 마다 별도의 상태 저장공간이 생김\n",
+        "        self.state = runtime_context.get_state(state_descriptor)\n",
+        "\n",
+        "    def process_element(self, value, ctx: 'KeyedProcessFunction.Context'):\n",
+        "        # 현재 상태 값 조회\n",
+        "        # 현재 사용자(key)의 저장되 누적합 가져오기\n",
+        "        current = self.state.value()\n",
+        "        # 처음 들어온 사용자라면 0으로 시작\n",
+        "        if current is None:\n",
+        "            current = 0\n",
+        "\n",
+        "        # 상태 업데이트\n",
+        "        current += value[1]\n",
+        "        self.state.update(current)\n",
+        "\n",
+        "        # 결과 출력: (사용자, 누적합계)\n",
+        "        yield value[0], current"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "id": "28ec55f9",
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "from pyflink.datastream.state import StateTtlConfig\n",
+        "from pyflink.common.time import Time\n",
+        "from pyflink.datastream import StreamExecutionEnvironment\n",
+        "from pyflink.common.typeinfo import Types\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 41,
+      "id": "1b93e78a",
+      "metadata": {
+        "id": "1b93e78a"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "('Alice', 110.0999984741211)\n",
+            "('Bob', 30.200000762939453)\n",
+            "('Alice', 130.0999984741211)\n",
+            "('Bob', 83.29999923706055)\n",
+            "('Alice', 143.19999885559082)\n",
+            "('Bob', 86.39999914169312)\n",
+            "('Bob', 102.49999952316284)\n",
+            "('Alice', 163.29999923706055)\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f0153c4d40>"
+            ]
+          },
+          "execution_count": 41,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# 상태 관리 실행\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "state_data = [\n",
+        "    ('Alice', 110.1),\n",
+        "    ('Bob', 30.2),\n",
+        "    ('Alice', 20.0),\n",
+        "    ('Bob', 53.1),\n",
+        "    ('Alice', 13.1),\n",
+        "    ('Bob', 3.1),\n",
+        "    ('Bob', 16.1),\n",
+        "    ('Alice', 20.1)\n",
+        "]\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=state_data,\n",
+        "    type_info=Types.TUPLE([Types.STRING(), Types.FLOAT()])\n",
+        ")\n",
+        "\n",
+        "ds.key_by(lambda value: value[0]) \\\n",
+        "  .process(SumFunction()) \\\n",
+        "  .print()\n",
+        "\n",
+        "env.execute(\"State Access Demo\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "073e0bc6",
+      "metadata": {
+        "id": "073e0bc6"
+      },
+      "source": [
+        "### 🏋️ 실습\n",
+        "\n",
+        "위 `SumFunction`을 수정해서 사용자별 **최대값(max)**을 추적하는\n",
+        "`MaxFunction`을 만들어 보세요.\n",
+        "\n",
+        "```python\n",
+        "class MaxFunction(KeyedProcessFunction):\n",
+        "    # 힌트: self.state.value()와 value[1]을 비교하여\n",
+        "    # 더 큰 값을 state에 저장하면 됩니다.\n",
+        "    pass\n",
+        "```\n",
+        "\n",
+        "<details>\n",
+        "<summary>모범 답안</summary>\n",
+        "\n",
+        "```python\n",
+        "class MaxFunction(KeyedProcessFunction):\n",
+        "    def __init__(self):\n",
+        "        self.state = None\n",
+        "\n",
+        "    def open(self, runtime_context: RuntimeContext):\n",
+        "        state_descriptor = ValueStateDescriptor(\"max_state\", Types.FLOAT())\n",
+        "        self.state = runtime_context.get_state(state_descriptor)\n",
+        "\n",
+        "    def process_element(self, value, ctx):\n",
+        "        current = self.state.value()\n",
+        "        if current is None or value[1] > current:\n",
+        "            current = value[1]\n",
+        "        self.state.update(current)\n",
+        "        yield value[0], current\n",
+        "```\n",
+        "\n",
+        "</details>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 68,
+      "id": "2b929714",
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "class MaxFunction(KeyedProcessFunction):\n",
+        "    def __init__(self):\n",
+        "        self.state = None\n",
+        "\n",
+        "    def open(self, runtime_context: RuntimeContext):\n",
+        "        state_descriptor = ValueStateDescriptor(\"max_state\", Types.FLOAT())\n",
+        "        self.state = runtime_context.get_state(state_descriptor)\n",
+        "\n",
+        "    def process_element(self, value, ctx):\n",
+        "        current = self.state.value()\n",
+        "        if current is None or value[1] > current:\n",
+        "            current = value[1]\n",
+        "        self.state.update(current)\n",
+        "        yield value[0], current"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 69,
+      "id": "aacfeb38",
+      "metadata": {},
+      "outputs": [
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.datastream.data_stream.DataStream at 0x70f00c7c1d00>"
+            ]
+          },
+          "execution_count": 69,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "ds.key_by(lambda x: x[0]).process(MaxFunction())"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "c11ae001",
+      "metadata": {
+        "id": "c11ae001"
+      },
+      "source": [
+        "### 3.5 윈도우 연산 (Window Operations)\n",
+        "\n",
+        "스트림 처리에서 윈도우는 무한 데이터 스트림을 유한한 청크로 나누어 처리하는 핵심 개념입니다.\n",
+        "\n",
+        "| 윈도우 유형 | 특징 | 사용 예시 |\n",
+        "|------------|------|----------|\n",
+        "| **Tumbling Window** | 고정 크기, 겹치지 않음 | 매 5분마다 집계 |\n",
+        "| **Sliding Window** | 고정 크기, 겹칠 수 있음 | 5분 윈도우를 1분마다 계산 |\n",
+        "| **Session Window** | 활동 간격 기반, 동적 크기 | 유저 세션별 집계 |\n",
+        "| **Count Window** | 개수 기반 | N개마다 집계 |\n",
+        "\n",
+        "<!-- IMAGE: 윈도우 유형별 다이어그램 (Tumbling/Sliding/Session) -->"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 70,
+      "id": "862726b1",
+      "metadata": {
+        "id": "862726b1",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [],
+      "source": [
+        "# 윈도우 예제용 데이터: (key, timestamp_ms)\n",
+        "window_data = [\n",
+        "    ('hi', 1), ('hi', 2), ('hi', 3), ('hi', 4),\n",
+        "    ('hi', 5), ('hi', 8), ('hi', 9), ('hi', 15)\n",
+        "]\n",
+        "\n",
+        "# Timestamp Assigner: 튜플의 두 번째 요소를 타임스탬프로 사용\n",
+        "class MyTimestampAssigner(TimestampAssigner):\n",
+        "    def extract_timestamp(self, value, record_timestamp) -> int:\n",
+        "        return int(value[1])"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 71,
+      "id": "66005558",
+      "metadata": {
+        "id": "66005558"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "(hi,0,5,4)\n",
+            "(hi,5,10,3)\n",
+            "(hi,15,20,1)\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f01408deb0>"
+            ]
+          },
+          "execution_count": 71,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# Tumbling Window: 5ms 크기, 겹치지 않는 고정 윈도우\n",
+        "from pyflink.datastream import ProcessWindowFunction\n",
+        "from pyflink.datastream.window import TumblingEventTimeWindows, TimeWindow\n",
+        "\n",
+        "class CountWindowProcessFunction(ProcessWindowFunction[tuple, tuple, str, TimeWindow]):\n",
+        "    \"\"\"윈도우 내 요소 개수를 세는 함수\"\"\"\n",
+        "    def process(self, key: str, context: ProcessWindowFunction.Context[TimeWindow],\n",
+        "                elements: Iterable[tuple]) -> Iterable[tuple]:\n",
+        "        count = len([e for e in elements])\n",
+        "        return [(key, context.window().start, context.window().end, count)]\n",
+        "\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    window_data,\n",
+        "    type_info=Types.TUPLE([Types.STRING(), Types.INT()])\n",
+        ")\n",
+        "\n",
+        "watermark_strategy = WatermarkStrategy.for_monotonous_timestamps() \\\n",
+        "    .with_timestamp_assigner(MyTimestampAssigner())\n",
+        "\n",
+        "# 윈도우: [0,5), [5,10), [10,15), [15,20)\n",
+        "ds.assign_timestamps_and_watermarks(watermark_strategy) \\\n",
+        "  .key_by(lambda x: x[0], key_type=Types.STRING()) \\\n",
+        "  .window(TumblingEventTimeWindows.of(Time.milliseconds(5))) \\\n",
+        "  .process(CountWindowProcessFunction(),\n",
+        "           Types.TUPLE([Types.STRING(), Types.INT(), Types.INT(), Types.INT()])) \\\n",
+        "  .print()\n",
+        "\n",
+        "env.execute(\"Tumbling Window Example\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 72,
+      "id": "521bd82f",
+      "metadata": {
+        "id": "521bd82f"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "(hi,-2,3,2)\n",
+            "(hi,0,5,4)\n",
+            "(hi,2,7,4)\n",
+            "(hi,4,9,3)\n",
+            "(hi,6,11,2)\n",
+            "(hi,8,13,2)\n",
+            "(hi,12,17,1)\n",
+            "(hi,14,19,1)\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f01583eb70>"
+            ]
+          },
+          "execution_count": 72,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# Sliding Window: 크기 5ms, 슬라이드 2ms — 윈도우가 겹칠 수 있음\n",
+        "from pyflink.datastream.window import SlidingEventTimeWindows\n",
+        "\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    window_data,\n",
+        "    type_info=Types.TUPLE([Types.STRING(), Types.INT()])\n",
+        ")\n",
+        "\n",
+        "watermark_strategy = WatermarkStrategy.for_monotonous_timestamps() \\\n",
+        "    .with_timestamp_assigner(MyTimestampAssigner())\n",
+        "\n",
+        "ds.assign_timestamps_and_watermarks(watermark_strategy) \\\n",
+        "  .key_by(lambda x: x[0], key_type=Types.STRING()) \\\n",
+        "  .window(SlidingEventTimeWindows.of(Time.milliseconds(5), Time.milliseconds(2))) \\\n",
+        "  .process(CountWindowProcessFunction(),\n",
+        "           Types.TUPLE([Types.STRING(), Types.INT(), Types.INT(), Types.INT()])) \\\n",
+        "  .print()\n",
+        "\n",
+        "env.execute(\"Sliding Window Example\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "e1d27c45",
+      "metadata": {},
+      "source": [
+        "### 세션별로 나누는 이유\n",
+        "사용자의 활동 단위(세션)별로 의미 있는 집계를 하기 위해서\n",
+        "\n",
+        "gap = 5ms\n",
+        "\n",
+        "4 → 8 사이 간격 = 4ms ❌ (여기서 실제로는 4라서 세션 안 끊김)\n",
+        "\n",
+        "하지만 보통 마지막 이벤트 이후 5ms 동안 이벤트가 없으면 세션 종료\n",
+        "\n",
+        "즉: 이벤트 사이의 공백 시간(inactivity gap)이 일정 시간 이상이면 새로운 세션으로 판단"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 45,
+      "id": "c555db49",
+      "metadata": {
+        "id": "c555db49"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "(hi,1,14,6)\n",
+            "(hi,15,20,1)\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f015e36420>"
+            ]
+          },
+          "execution_count": 45,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# Session Window: 5ms 간격 — 활동이 없으면 세션 종료\n",
+        "from pyflink.datastream.window import EventTimeSessionWindows\n",
+        "\n",
+        "session_data = [\n",
+        "    ('hi', 1), ('hi', 2), ('hi', 3), ('hi', 4),  # 세션 1\n",
+        "    ('hi', 8), ('hi', 9),                          # 세션 2 (5ms 이상 간격)\n",
+        "    ('hi', 15)                                      # 세션 3\n",
+        "]\n",
+        "\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    session_data,\n",
+        "    type_info=Types.TUPLE([Types.STRING(), Types.INT()])\n",
+        ")\n",
+        "\n",
+        "watermark_strategy = WatermarkStrategy.for_monotonous_timestamps() \\\n",
+        "    .with_timestamp_assigner(MyTimestampAssigner())\n",
+        "\n",
+        "ds.assign_timestamps_and_watermarks(watermark_strategy) \\\n",
+        "  .key_by(lambda x: x[0], key_type=Types.STRING()) \\\n",
+        "  .window(EventTimeSessionWindows.with_gap(Time.milliseconds(5))) \\\n",
+        "  .process(CountWindowProcessFunction(),\n",
+        "           Types.TUPLE([Types.STRING(), Types.INT(), Types.INT(), Types.INT()])) \\\n",
+        "  .print()\n",
+        "\n",
+        "env.execute(\"Session Window Example\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "2ce69f11",
+      "metadata": {},
+      "source": [
+        "### count window\n",
+        "- 시간이 아니라 “개수”로 윈도우를 자름 \n",
+        "- ex) count_window(2)는 key별로 이벤트를 2개(여기선 'hi', 'hello') 모을 때마다 하나의 윈도우를 닫고 apply()를 실행\n",
+        "- “몇 개 모였냐”만 봄\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 73,
+      "id": "cccbfe99",
+      "metadata": {
+        "id": "cccbfe99",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "(hi,4)\n",
+            "(hello,6)\n",
+            "(hello,12)\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f014105b20>"
+            ]
+          },
+          "execution_count": 73,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# Count Window: 2개씩 그룹화 — 개수 기반 윈도우\n",
+        "from pyflink.datastream import WindowFunction\n",
+        "from pyflink.datastream.window import CountWindow\n",
+        "\n",
+        "class SumWindowFunction(WindowFunction[tuple, tuple, str, CountWindow]):\n",
+        "    \"\"\"윈도우 내 값의 합계를 계산\"\"\"\n",
+        "    def apply(self, key: str, window: CountWindow, inputs: Iterable[tuple]):\n",
+        "        total = sum(i[0] for i in inputs)\n",
+        "        return [(key, total)]\n",
+        "\n",
+        "count_data = [\n",
+        "    (1, 'hi'), (2, 'hello'), (3, 'hi'), (4, 'hello'),\n",
+        "    (5, 'hi'), (6, 'hello'), (6, 'hello')\n",
+        "]\n",
+        "\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    count_data,\n",
+        "    type_info=Types.TUPLE([Types.INT(), Types.STRING()])\n",
+        ")\n",
+        "\n",
+        "# hi: [1, 3] -> 4, [5] -> 대기 (2개가 안 채워져서)\n",
+        "# hello: [2, 4] -> 6, [6, 6] -> 12\n",
+        "ds.key_by(lambda x: x[1], key_type=Types.STRING()) \\\n",
+        "  .count_window(2) \\\n",
+        "  .apply(SumWindowFunction(), Types.TUPLE([Types.STRING(), Types.INT()])) \\\n",
+        "  .print()\n",
+        "\n",
+        "env.execute(\"Count Window Example\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "716a42f8",
+      "metadata": {},
+      "source": [
+        "key='hi' 에 들어오는 값들\n",
+        "\n",
+        "값(첫 번째 필드)만 보면: [1, 3, 5]\n",
+        "\n",
+        "윈도우1: [1, 3] → 합 4 ✅ 출력\n",
+        "\n",
+        "윈도우2: [5] → 아직 2개 안 됨 → 출력 안 됨(대기)\n",
+        "\n",
+        "key='hello' 에 들어오는 값들\n",
+        "\n",
+        "값만 보면: [2, 4, 6, 6]\n",
+        "\n",
+        "윈도우1: [2, 4] → 합 6 ✅ 출력\n",
+        "\n",
+        "윈도우2: [6, 6] → 합 12 ✅ 출력\n",
+        "\n",
+        "출력 순서는 스트림 처리/키 도착 순서에 따라 섞일 수 있지만, 나오는 결과 값 자체는 이 3개가 맞아요.\n",
+        "\n",
+        "('hi', 4)\n",
+        "\n",
+        "('hello', 6)\n",
+        "\n",
+        "('hello', 12)\n",
+        "\n",
+        "('hi', 5)는 윈도우가 닫히지 않아서 안 나옵니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "37ee42b1",
+      "metadata": {
+        "id": "37ee42b1"
+      },
+      "source": [
+        "### 3.6 이벤트 시간과 타이머\n",
+        "\n",
+        "Flink는 이벤트 시간 기반 처리를 위한 타이머 기능을 제공합니다.\n",
+        "타이머를 등록하면 특정 시간이 지난 후에 콜백 함수가 호출됩니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 74,
+      "id": "d81b6ebb",
+      "metadata": {
+        "id": "d81b6ebb",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [],
+      "source": [
+        "# 이벤트 타이머 예제: 각 이벤트 처리 후 2초 뒤에 합계 출력\n",
+        "class TimerSumFunction(KeyedProcessFunction):\n",
+        "    \"\"\"타이머를 사용한 지연 출력 함수\"\"\"\n",
+        "\n",
+        "    def __init__(self):\n",
+        "        self.state = None\n",
+        "\n",
+        "    def open(self, runtime_context: RuntimeContext):\n",
+        "        state_descriptor = ValueStateDescriptor(\"state\", Types.FLOAT())\n",
+        "        state_ttl_config = StateTtlConfig \\\n",
+        "            .new_builder(Time.seconds(1)) \\\n",
+        "            .set_update_type(StateTtlConfig.UpdateType.OnReadAndWrite) \\\n",
+        "            .disable_cleanup_in_background() \\\n",
+        "            .build()\n",
+        "        state_descriptor.enable_time_to_live(state_ttl_config)\n",
+        "        self.state = runtime_context.get_state(state_descriptor)\n",
+        "\n",
+        "    def process_element(self, value, ctx: 'KeyedProcessFunction.Context'):\n",
+        "        current = self.state.value() or 0\n",
+        "        current += value[2]\n",
+        "        self.state.update(current)\n",
+        "        # 2초 후에 타이머 발동 등록\n",
+        "        ctx.timer_service().register_event_time_timer(ctx.timestamp() + 2000)\n",
+        "\n",
+        "    def on_timer(self, timestamp: int, ctx: 'KeyedProcessFunction.OnTimerContext'):\n",
+        "        \"\"\"타이머 발동 시 호출\"\"\"\n",
+        "        yield ctx.get_current_key(), self.state.value()\n",
+        "\n",
+        "class EventTimestampAssigner(TimestampAssigner):\n",
+        "    def extract_timestamp(self, value, record_timestamp: int) -> int:\n",
+        "        return int(value[0])"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 75,
+      "id": "4b06d371",
+      "metadata": {
+        "id": "4b06d371"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "('Alice', 163.29999923706055)\n",
+            "('Bob', 102.49999952316284)\n",
+            "('Alice', 163.29999923706055)\n",
+            "('Bob', 102.49999952316284)\n",
+            "('Bob', 102.49999952316284)\n",
+            "('Alice', 163.29999923706055)\n",
+            "('Bob', 102.49999952316284)\n",
+            "('Alice', 163.29999923706055)\n"
+          ]
+        },
+        {
+          "data": {
+            "text/plain": [
+              "<pyflink.common.job_execution_result.JobExecutionResult at 0x70f079b6ad50>"
+            ]
+          },
+          "execution_count": 75,
+          "metadata": {},
+          "output_type": "execute_result"
+        }
+      ],
+      "source": [
+        "# 이벤트 타이머 실행\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "\n",
+        "timer_data = [\n",
+        "    (1000, 'Alice', 110.1),\n",
+        "    (4000, 'Bob', 30.2),\n",
+        "    (3000, 'Alice', 20.0),\n",
+        "    (2000, 'Bob', 53.1),\n",
+        "    (5000, 'Alice', 13.1),\n",
+        "    (3000, 'Bob', 3.1),\n",
+        "    (7000, 'Bob', 16.1),\n",
+        "    (10000, 'Alice', 20.1)\n",
+        "]\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=timer_data,\n",
+        "    type_info=Types.TUPLE([Types.LONG(), Types.STRING(), Types.FLOAT()])\n",
+        ")\n",
+        "\n",
+        "ds.assign_timestamps_and_watermarks(\n",
+        "    WatermarkStrategy.for_bounded_out_of_orderness(Duration.of_seconds(2))\n",
+        "                     .with_timestamp_assigner(EventTimestampAssigner())\n",
+        ") \\\n",
+        "  .key_by(lambda value: value[1]) \\\n",
+        "  .process(TimerSumFunction()) \\\n",
+        "  .print()\n",
+        "\n",
+        "env.execute(\"Event Timer Example\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "cd669a78",
+      "metadata": {
+        "id": "cd669a78"
+      },
+      "source": [
+        "### 3.7 Source/Sink 패턴 참조\n",
+        "\n",
+        "**소스(Source) 유형:**\n",
+        "\n",
+        "| 소스 유형 | 설명 | Spark 대응 |\n",
+        "|----------|------|-----------|\n",
+        "| `from_collection()` | 메모리 리스트에서 읽기 (테스트용) | `spark.createDataFrame()` |\n",
+        "| `FileSource` | 파일에서 읽기 | `spark.readStream.format(\"text\")` |\n",
+        "| `KafkaSource` | Kafka 토픽에서 읽기 | `spark.readStream.format(\"kafka\")` |\n",
+        "\n",
+        "**싱크(Sink) 유형:**\n",
+        "\n",
+        "| 싱크 유형 | 설명 | Spark 대응 |\n",
+        "|----------|------|-----------|\n",
+        "| `.print()` | 콘솔 출력 (디버깅용) | `df.show()` |\n",
+        "| `FileSink` | 파일로 쓰기 | `df.writeStream.format(\"text\")` |\n",
+        "| `KafkaSink` | Kafka 토픽으로 쓰기 | `df.writeStream.format(\"kafka\")` |\n",
+        "\n",
+        "**`env.execute()` — Lazy Evaluation:**\n",
+        "\n",
+        "Flink는 Spark처럼 **지연 실행** 방식입니다.\n",
+        "변환을 정의해도 바로 실행되지 않고, 최종적으로 `execute()`를 호출해야 실제로 작업이 수행됩니다.\n",
+        "모든 소스, 변환, 싱크를 정의한 후 마지막에 `env.execute()`를 호출하는 것이 기본 패턴입니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "286bbd7c",
+      "metadata": {
+        "id": "286bbd7c"
+      },
+      "source": [
+        "### 📝 FAQ\n",
+        "\n",
+        "**Q. `env.execute()`는 왜 마지막에 호출하나요?**\n",
+        "\n",
+        "> Flink는 Spark처럼 지연 실행(Lazy Evaluation) 방식입니다.\n",
+        "> `map()`, `filter()` 등은 실행 계획만 등록할 뿐, 실제 데이터 처리는 하지 않습니다.\n",
+        "> `execute()`를 호출하는 시점에 전체 파이프라인이 최적화되어 한 번에 실행됩니다.\n",
+        "\n",
+        "**Q. `output_type`을 꼭 지정해야 하나요?**\n",
+        "\n",
+        "> Python은 동적 타입 언어라서, Flink(Java 기반)가 출력 타입을 자동 추론하기 어렵습니다.\n",
+        "> 특히 `lambda`를 사용할 때는 반드시 `output_type`을 지정해야 합니다.\n",
+        "> 지정하지 않으면 직렬화 오류가 발생할 수 있습니다.\n",
+        "\n",
+        "**Q. State TTL은 왜 설정하나요?**\n",
+        "\n",
+        "> 스트림 처리는 24시간 365일 실행됩니다. 상태를 무한히 쌓으면 메모리가 고갈됩니다.\n",
+        "> TTL을 설정하면 일정 시간이 지난 상태가 자동으로 삭제되어 메모리를 효율적으로 관리할 수 있습니다.\n",
+        "> 예: \"최근 1시간 동안의 사용자 활동만 추적\"\n",
+        "\n",
+        "**Q. Window가 닫히는 시점은?**\n",
+        "\n",
+        "> Watermark가 윈도우 끝 시간을 넘어서면 윈도우가 닫힙니다.\n",
+        "> 예: Tumbling Window [0, 5)에서 Watermark가 5 이상이 되면 윈도우가 닫히고 결과가 출력됩니다.\n",
+        "> Flink는 Spark와 달리 배치 경계가 아닌 Watermark 도달 즉시 윈도우를 닫습니다.\n",
+        "\n",
+        "**Q. Count Window에서 남은 데이터는 어떻게 되나요?**\n",
+        "\n",
+        "> Count Window는 지정된 개수가 채워져야 결과가 출력됩니다.\n",
+        "> 예: 2개씩 그룹화할 때 3개의 데이터가 들어오면, 2개는 처리되고 1개는 대기합니다.\n",
+        "> 스트림이 종료되면 남은 데이터는 처리되지 않습니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "0daf7f35",
+      "metadata": {
+        "id": "0daf7f35"
+      },
+      "source": [
+        "### ✅ 퀴즈\n",
+        "\n",
+        "**Q1.** Flink DataStream API에서 `key_by()`에 대응하는 Spark 연산은?\n",
+        "\n",
+        "- A) `select()`\n",
+        "- B) `groupByKey()`\n",
+        "- C) `repartition()`\n",
+        "- D) `broadcast()`\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: B)**\n",
+        "\n",
+        "`key_by()`는 키 기준으로 데이터를 그룹화하는 연산으로, Spark의 `groupByKey()`와 대응됩니다.\n",
+        "Flink에서는 `key_by()` 이후에 `reduce()`, `sum()`, `process()` 등의 집계 연산을 적용합니다.\n",
+        "\n",
+        "</details>\n",
+        "\n",
+        "---\n",
+        "\n",
+        "**Q2.** Tumbling Window와 Sliding Window의 핵심 차이점은?\n",
+        "\n",
+        "- A) Tumbling은 시간 기반, Sliding은 개수 기반\n",
+        "- B) Tumbling은 윈도우가 겹치지 않고, Sliding은 겹칠 수 있음\n",
+        "- C) Tumbling은 배치용, Sliding은 스트림용\n",
+        "- D) Tumbling은 키가 필요하고, Sliding은 키가 불필요\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: B)**\n",
+        "\n",
+        "Tumbling Window는 고정 크기의 겹치지 않는 윈도우입니다 (예: 매 5초).\n",
+        "Sliding Window는 고정 크기이지만 슬라이드 간격에 따라 겹칠 수 있습니다 (예: 5초 윈도우를 2초마다).\n",
+        "\n",
+        "</details>\n",
+        "\n",
+        "---\n",
+        "\n",
+        "**Q3.** ValueState에 TTL을 설정하는 가장 큰 이유는?\n",
+        "\n",
+        "- A) 보안을 위해 오래된 데이터를 삭제\n",
+        "- B) 처리 속도를 높이기 위해\n",
+        "- C) 무한히 쌓이는 상태로 인한 메모리 고갈 방지\n",
+        "- D) 체크포인트 크기를 줄이기 위해\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: C)**\n",
+        "\n",
+        "스트림 처리는 24/7 실행되므로 상태가 무한히 쌓일 수 있습니다.\n",
+        "TTL을 설정하면 일정 시간이 지난 상태를 자동 삭제하여 메모리를 효율적으로 관리합니다.\n",
+        "(D도 부수적인 효과이지만, 핵심 이유는 메모리 관리입니다.)\n",
+        "\n",
+        "</details>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "29dcc78b",
+      "metadata": {
+        "id": "29dcc78b"
+      },
+      "source": [
+        "**DataStream API 개념 매핑표:**\n",
+        "\n",
+        "| Flink 개념 | Spark 대응 개념 | 설명 |\n",
+        "|-----------|----------------|------|\n",
+        "| `StreamExecutionEnvironment` | `SparkSession` | 실행 환경/컨텍스트 |\n",
+        "| `DataStream` | `RDD` / `DStream` | 데이터 스트림 추상화 |\n",
+        "| `Source` | `readStream` | 데이터 입력 |\n",
+        "| `Sink` | `writeStream` | 데이터 출력 |\n",
+        "| `key_by()` | `groupByKey()` | 키 기준 파티셔닝 |\n",
+        "| `WatermarkStrategy` | `withWatermark()` | 이벤트 시간 처리 |"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "89a7d3f9",
+      "metadata": {
+        "id": "89a7d3f9"
+      },
+      "source": [
+        "---\n",
+        "## 4. Table API\n",
+        "\n",
+        "앞서 배운 DataStream API가 Spark의 RDD API와 유사했다면,\n",
+        "**Table API**는 Spark의 **DataFrame API / SQL**과 매우 유사합니다.\n",
+        "더 선언적이고 SQL 친화적인 방식으로 데이터를 처리할 수 있습니다.\n",
+        "\n",
+        "| 구분 | DataStream API | Table API |\n",
+        "|------|---------------|-----------|\n",
+        "| 추상화 수준 | 저수준 (Low-level) | 고수준 (High-level) |\n",
+        "| 비유 | Spark RDD | Spark DataFrame |\n",
+        "| 스키마 | 명시적 타입 힌트 필요 | 테이블 스키마 기반 |\n",
+        "| SQL 지원 | 불가능 | 가능 |\n",
+        "| 최적화 | 수동 | 자동 (Optimizer) |\n",
+        "| 사용 사례 | 세밀한 제어 필요 시 | 분석/ETL 작업 |\n",
+        "\n",
+        "**Spark 경험이 있다면:** DataFrame API를 쓰듯이 Table API를 사용하면 됩니다!"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "e81c01b2",
+      "metadata": {
+        "id": "e81c01b2"
+      },
+      "source": [
+        "### 4.1 TableEnvironment\n",
+        "\n",
+        "DataStream API에서 `StreamExecutionEnvironment`를 사용했다면,\n",
+        "Table API에서는 **`TableEnvironment`**를 사용합니다.\n",
+        "\n",
+        "```python\n",
+        "# Spark 방식\n",
+        "spark = SparkSession.builder \\\n",
+        "    .config(\"spark.default.parallelism\", \"1\") \\\n",
+        "    .getOrCreate()\n",
+        "\n",
+        "# Flink Table API 방식\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "t_env.get_config().set(\"parallelism.default\", \"1\")\n",
+        "```\n",
+        "\n",
+        "**실행 모드 선택:**\n",
+        "- `EnvironmentSettings.in_streaming_mode()`: 스트리밍 모드\n",
+        "- `EnvironmentSettings.in_batch_mode()`: 배치 모드"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 76,
+      "id": "feea211e",
+      "metadata": {
+        "id": "feea211e"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "TableEnvironment 생성 완료\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Table 환경 생성\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "t_env.get_config().set(\"parallelism.default\", \"1\")\n",
+        "\n",
+        "print(\"TableEnvironment 생성 완료\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "bb9fe65e",
+      "metadata": {
+        "id": "bb9fe65e"
+      },
+      "source": [
+        "### 4.2 테이블 정의 + Word Count\n",
+        "\n",
+        "Flink Table API에서 소스/싱크 테이블을 정의하는 방법은 두 가지가 있습니다.\n",
+        "\n",
+        "**방법 1: TableDescriptor (프로그래밍 방식)**\n",
+        "\n",
+        "```python\n",
+        "t_env.create_temporary_table(\n",
+        "    'source',\n",
+        "    TableDescriptor.for_connector('filesystem')\n",
+        "        .schema(Schema.new_builder()\n",
+        "                .column('word', DataTypes.STRING())\n",
+        "                .build())\n",
+        "        .option('path', input_path)\n",
+        "        .format('csv')\n",
+        "        .build()\n",
+        ")\n",
+        "```\n",
+        "\n",
+        "**방법 2: DDL SQL 사용 (SQL 친화적)**\n",
+        "\n",
+        "```python\n",
+        "t_env.execute_sql(\"\"\"\n",
+        "    CREATE TABLE source (word STRING)\n",
+        "    WITH ('connector'='filesystem', 'format'='csv', 'path'='/path/to/input')\n",
+        "\"\"\")\n",
+        "```\n",
+        "\n",
+        "Spark SQL의 `CREATE TABLE ... USING csv LOCATION ...`과 비슷하지만,\n",
+        "Flink는 `WITH` 절로 커넥터 옵션을 지정합니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 77,
+      "id": "3d176ac5",
+      "metadata": {
+        "id": "3d176ac5"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+I[To, 1]\n",
+            "+I[be,, 1]\n",
+            "+I[or, 1]\n",
+            "+I[not, 1]\n",
+            "+I[to, 1]\n",
+            "+I[be,--that, 1]\n",
+            "+I[is, 1]\n",
+            "+I[the, 1]\n",
+            "+I[question:--, 1]\n",
+            "+I[Whether, 1]\n",
+            "+I['tis, 1]\n",
+            "+I[nobler, 1]\n",
+            "+I[in, 1]\n",
+            "-U[the, 1]\n",
+            "+U[the, 2]\n",
+            "+I[mind, 1]\n",
+            "-U[to, 1]\n",
+            "+U[to, 2]\n",
+            "+I[suffer, 1]\n",
+            "+I[The, 1]\n",
+            "+I[slings, 1]\n",
+            "+I[and, 1]\n",
+            "+I[arrows, 1]\n",
+            "+I[of, 1]\n",
+            "+I[outrageous, 1]\n",
+            "+I[fortune, 1]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Table API Word Count\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "t_env.get_config().set(\"parallelism.default\", \"1\")\n",
+        "\n",
+        "word_count_data = [\n",
+        "    \"To be, or not to be,--that is the question:--\",\n",
+        "    \"Whether 'tis nobler in the mind to suffer\",\n",
+        "    \"The slings and arrows of outrageous fortune\"\n",
+        "]\n",
+        "\n",
+        "# 소스 테이블 생성\n",
+        "tab = t_env.from_elements(\n",
+        "    map(lambda i: (i,), word_count_data),\n",
+        "    DataTypes.ROW([DataTypes.FIELD('line', DataTypes.STRING())])\n",
+        ")\n",
+        "\n",
+        "# Sink 테이블 생성 (print connector)\n",
+        "t_env.create_temporary_table(\n",
+        "    'sink',\n",
+        "    TableDescriptor.for_connector('print')\n",
+        "                   .schema(Schema.new_builder()\n",
+        "                           .column('word', DataTypes.STRING())\n",
+        "                           .column('count', DataTypes.BIGINT())\n",
+        "                           .build())\n",
+        "                   .build()\n",
+        ")\n",
+        "\n",
+        "# UDTF: 한 행을 여러 행으로 확장 (DataStream의 flat_map과 대응)\n",
+        "@udtf(result_types=[DataTypes.STRING()])\n",
+        "def split(line: Row):\n",
+        "    for word in line[0].split():\n",
+        "        yield Row(word)\n",
+        "\n",
+        "# 파이프라인: flat_map -> alias -> group_by -> count -> insert\n",
+        "tab.flat_map(split).alias('word') \\\n",
+        "   .group_by(col('word')) \\\n",
+        "   .select(col('word'), lit(1).count) \\\n",
+        "   .execute_insert('sink') \\\n",
+        "   .wait()"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "a4b76349",
+      "metadata": {
+        "id": "a4b76349"
+      },
+      "source": [
+        "**단계별 분석:**\n",
+        "\n",
+        "| 단계 | 코드 | 설명 |\n",
+        "|------|------|------|\n",
+        "| 1 | `tab.flat_map(split)` | UDTF로 각 줄을 단어들로 분리 |\n",
+        "| 2 | `.alias('word')` | 결과 컬럼에 'word' 이름 부여 |\n",
+        "| 3 | `.group_by(col('word'))` | 단어별 그룹화 (Spark의 `groupBy`와 동일) |\n",
+        "| 4 | `.select(col('word'), lit(1).count)` | 집계: `COUNT(1)` |\n",
+        "| 5 | `.execute_insert('sink')` | 결과를 sink 테이블에 삽입하고 실행 |\n",
+        "| 6 | `.wait()` | 로컬 실행 시 완료 대기 |\n",
+        "\n",
+        "**Changelog Stream (+I, -U, +U, -D):**\n",
+        "\n",
+        "출력에서 `+I`, `-U`, `+U`, `-D` 같은 접두사를 볼 수 있습니다.\n",
+        "이는 Flink의 **Changelog Stream** 개념입니다.\n",
+        "\n",
+        "| 접두사 | 의미 | 설명 |\n",
+        "|--------|------|------|\n",
+        "| `+I` | INSERT | 새 레코드 추가 |\n",
+        "| `-U` | UPDATE BEFORE | 업데이트 전 값 (이전 값 취소) |\n",
+        "| `+U` | UPDATE AFTER | 업데이트 후 값 (새 값 삽입) |\n",
+        "| `-D` | DELETE | 삭제 |\n",
+        "\n",
+        "스트리밍에서 `GROUP BY` 결과가 바뀔 때마다 이전 값을 취소(-U)하고\n",
+        "새 값을 삽입(+U)하는 방식으로 실시간 업데이트를 표현합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "060b38e7",
+      "metadata": {
+        "id": "060b38e7"
+      },
+      "source": [
+        "### 4.3 기본 연산\n",
+        "\n",
+        "Table API의 기본 연산들을 살펴봅니다.\n",
+        "\n",
+        "| 연산 | Table API | Spark DataFrame | SQL |\n",
+        "|------|-----------|-----------------|-----|\n",
+        "| 필터 | `table.filter()` | `df.filter()` | `WHERE` |\n",
+        "| 제한 | `table.limit()` | `df.limit()` | `LIMIT` |\n",
+        "| 그룹 집계 | `table.group_by().select()` | `df.groupBy().agg()` | `GROUP BY` |\n",
+        "| 중복 제거 | `table.distinct()` | `df.distinct()` | `DISTINCT` |\n",
+        "| 조인 | `table.join()` | `df.join()` | `JOIN` |"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 78,
+      "id": "23273265",
+      "metadata": {
+        "id": "23273265"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "| op |                   id |                           name |                            tel |                        country |\n",
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "| +I |                    1 |                          Flink |                            123 |                        Germany |\n",
+            "| +I |                    2 |                          hello |                            135 |                          China |\n",
+            "| +I |                    3 |                          world |                            124 |                            USA |\n",
+            "| +I |                    4 |                        PyFlink |                             32 |                          China |\n",
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "4 rows in set\n"
+          ]
+        }
+      ],
+      "source": [
+        "# JSON 필드 추출\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "\n",
+        "table = t_env.from_elements(\n",
+        "    elements=[\n",
+        "        (1, '{\"name\": \"Flink\", \"tel\": 123, \"addr\": {\"country\": \"Germany\", \"city\": \"Berlin\"}}'),\n",
+        "        (2, '{\"name\": \"hello\", \"tel\": 135, \"addr\": {\"country\": \"China\", \"city\": \"Shanghai\"}}'),\n",
+        "        (3, '{\"name\": \"world\", \"tel\": 124, \"addr\": {\"country\": \"USA\", \"city\": \"NewYork\"}}'),\n",
+        "        (4, '{\"name\": \"PyFlink\", \"tel\": 32, \"addr\": {\"country\": \"China\", \"city\": \"Hangzhou\"}}')\n",
+        "    ],\n",
+        "    schema=['id', 'data']\n",
+        ")\n",
+        "\n",
+        "# json_value()로 JSON 필드 추출\n",
+        "table = table.add_columns(\n",
+        "    col('data').json_value('$.name', DataTypes.STRING()).alias('name'),\n",
+        "    col('data').json_value('$.tel', DataTypes.STRING()).alias('tel'),\n",
+        "    col('data').json_value('$.addr.country', DataTypes.STRING()).alias('country')\n",
+        ").drop_columns(col('data'))\n",
+        "\n",
+        "table.execute().print()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 52,
+      "id": "c2e90825",
+      "metadata": {
+        "id": "c2e90825"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "| op |                   id |                           name |                            tel |                        country |\n",
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "| +I |                    1 |                          Flink |                            123 |                        Germany |\n",
+            "| +I |                    2 |                          hello |                            135 |                          China |\n",
+            "| +I |                    3 |                          world |                            124 |                            USA |\n",
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "3 rows in set\n"
+          ]
+        }
+      ],
+      "source": [
+        "# limit\n",
+        "table.limit(3).execute().print()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 53,
+      "id": "64176f6a",
+      "metadata": {
+        "id": "64176f6a"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "| op |                   id |                           name |                            tel |                        country |\n",
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "| +I |                    1 |                          Flink |                            123 |                        Germany |\n",
+            "| +I |                    2 |                          hello |                            135 |                          China |\n",
+            "| +I |                    4 |                        PyFlink |                             32 |                          China |\n",
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+\n",
+            "3 rows in set\n"
+          ]
+        }
+      ],
+      "source": [
+        "# filter\n",
+        "table.filter(col('id') != 3).execute().print()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 54,
+      "id": "1259776e",
+      "metadata": {
+        "id": "1259776e"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+----+--------------------------------+----------------------+----------------------+\n",
+            "| op |                        country |                  cnt |              max_tel |\n",
+            "+----+--------------------------------+----------------------+----------------------+\n",
+            "| +I |                        Germany |                    1 |                  123 |\n",
+            "| +I |                          China |                    1 |                  135 |\n",
+            "| -U |                          China |                    1 |                  135 |\n",
+            "| +U |                          China |                    2 |                  135 |\n",
+            "| +I |                            USA |                    1 |                  124 |\n",
+            "+----+--------------------------------+----------------------+----------------------+\n",
+            "5 rows in set\n"
+          ]
+        }
+      ],
+      "source": [
+        "# group_by + aggregation: 국가별 집계\n",
+        "table.group_by(col('country')) \\\n",
+        "     .select(\n",
+        "         col('country'),\n",
+        "         col('id').count.alias('cnt'),\n",
+        "         col('tel').cast(DataTypes.BIGINT()).max.alias('max_tel')\n",
+        "     ) \\\n",
+        "     .execute().print()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "id": "de71d068",
+      "metadata": {
+        "id": "de71d068"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+----+--------------------------------+\n",
+            "| op |                        country |\n",
+            "+----+--------------------------------+\n",
+            "| +I |                        Germany |\n",
+            "| +I |                          China |\n",
+            "| +I |                            USA |\n",
+            "+----+--------------------------------+\n",
+            "3 rows in set\n"
+          ]
+        }
+      ],
+      "source": [
+        "# distinct : 중복 제거\n",
+        "table.select(col('country')).distinct().execute().print()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 56,
+      "id": "e23c0530",
+      "metadata": {
+        "id": "e23c0530"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+----------------------+----------------------+\n",
+            "| op |                   id |                           name |                            tel |                        country |                 r_id |                  age |\n",
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+----------------------+----------------------+\n",
+            "| +I |                    4 |                        PyFlink |                             32 |                          China |                    4 |                   10 |\n",
+            "| +I |                    1 |                          Flink |                            123 |                        Germany |                    1 |                   18 |\n",
+            "| +I |                    2 |                          hello |                            135 |                          China |                    2 |                   30 |\n",
+            "| +I |                    3 |                          world |                            124 |                            USA |                    3 |                   25 |\n",
+            "+----+----------------------+--------------------------------+--------------------------------+--------------------------------+----------------------+----------------------+\n",
+            "4 rows in set\n"
+          ]
+        }
+      ],
+      "source": [
+        "# join\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "\n",
+        "table = t_env.from_elements(\n",
+        "    elements=[\n",
+        "        (1, '{\"name\": \"Flink\", \"tel\": 123, \"addr\": {\"country\": \"Germany\", \"city\": \"Berlin\"}}'),\n",
+        "        (2, '{\"name\": \"hello\", \"tel\": 135, \"addr\": {\"country\": \"China\", \"city\": \"Shanghai\"}}'),\n",
+        "        (3, '{\"name\": \"world\", \"tel\": 124, \"addr\": {\"country\": \"USA\", \"city\": \"NewYork\"}}'),\n",
+        "        (4, '{\"name\": \"PyFlink\", \"tel\": 32, \"addr\": {\"country\": \"China\", \"city\": \"Hangzhou\"}}')\n",
+        "    ],\n",
+        "    schema=['id', 'data']\n",
+        ")\n",
+        "\n",
+        "table = table.add_columns(\n",
+        "    col('data').json_value('$.name', DataTypes.STRING()).alias('name'),\n",
+        "    col('data').json_value('$.tel', DataTypes.STRING()).alias('tel'),\n",
+        "    col('data').json_value('$.addr.country', DataTypes.STRING()).alias('country')\n",
+        ").drop_columns(col('data'))\n",
+        "\n",
+        "right_table = t_env.from_elements(\n",
+        "    elements=[(1, 18), (2, 30), (3, 25), (4, 10)],\n",
+        "    schema=['id', 'age']\n",
+        ")\n",
+        "\n",
+        "table.join(\n",
+        "    right_table.rename_columns(col('id').alias('r_id')),\n",
+        "    col('id') == col('r_id')\n",
+        ").execute().print()"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "f7e789b3",
+      "metadata": {
+        "id": "f7e789b3"
+      },
+      "source": [
+        "### 4.4 UDF + Expression API\n",
+        "\n",
+        "**Expression API** — Spark DataFrame의 컬럼 표현식과 유사합니다:\n",
+        "\n",
+        "```python\n",
+        "from pyflink.table.expressions import col, lit\n",
+        "\n",
+        "col('word')           # Spark: col(\"word\")\n",
+        "lit(1)                # Spark: lit(1)\n",
+        "lit(1).count          # Spark: count(lit(1))\n",
+        "col('amount').sum     # Spark: sum(\"amount\")\n",
+        "col('age') > 18       # Spark: col(\"age\") > 18\n",
+        "```\n",
+        "\n",
+        "**UDTF (User Defined Table Function):**\n",
+        "\n",
+        "Table API에서 `flat_map`처럼 1:N 변환을 하려면 UDTF를 사용합니다.\n",
+        "DataStream API의 `flat_map`과 대응되는 개념입니다.\n",
+        "\n",
+        "```python\n",
+        "# DataStream API\n",
+        "def split(line):\n",
+        "    yield from line.split()\n",
+        "ds.flat_map(split)\n",
+        "\n",
+        "# Table API — UDTF 데코레이터 필요\n",
+        "@udtf(result_types=[DataTypes.STRING()])\n",
+        "def split(line: Row):\n",
+        "    for s in line[0].split():\n",
+        "        yield Row(s)\n",
+        "tab.flat_map(split)\n",
+        "```"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "a4a28a37",
+      "metadata": {},
+      "source": [
+        "### UDF\n",
+        "- 사용자 정의 함수(User Defined Function)\n",
+        "- Flink에서 기본 제공하는 함수가 아닌 사용자가 직접 만든 함수\n",
+        "\n",
+        "### UDTF\n",
+        "- User Defined Table Function\n",
+        "- 사용자가 만든 여러 행(row)를 반환하는 함수\n",
+        "- 입력 1개 -> 출력 여러개(여러 행) 이라 table function임\n",
+        "- 사용 ex) 문자열을 단어로 분리(explode) / 배열을 여러 행으로 펼치기 / JSON 내부 배열 분해 등\n",
+        "\n",
+        "### Expression API\n",
+        "- SQL을 문자열로 쓰지 않고, 파이썬 코드 형태로 표현식을 작성하는 방식\n",
+        "- SQL 방식\n",
+        "    ```python\n",
+        "    table.select(\"id, amount + 1\")\n",
+        "    ```\n",
+        "- Expression API 방식\n",
+        "    ```python\n",
+        "    from pyflink.table import expressions as expr\n",
+        "\n",
+        "    table.select(\n",
+        "        expr.col(\"id\"),\n",
+        "        (expr.col(\"amount\") + 1)\n",
+        "    )\n",
+        "    ```"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 57,
+      "id": "4983a1b4",
+      "metadata": {
+        "id": "4983a1b4"
+      },
+      "outputs": [
+        {
+          "name": "stderr",
+          "output_type": "stream",
+          "text": [
+            "Exception in thread read_grpc_client_inputs:\n",
+            "Traceback (most recent call last):\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1073, in _bootstrap_inner\n",
+            "    self.run()\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1010, in run\n",
+            "    self._target(*self._args, **self._kwargs)\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 721, in <lambda>\n",
+            "    target=lambda: self._read_inputs(elements_iterator),\n",
+            "                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 704, in _read_inputs\n",
+            "    for elements in elements_iterator:\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 543, in __next__\n",
+            "    return self._next()\n",
+            "           ^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 969, in _next\n",
+            "    raise self\n",
+            "grpc._channel._MultiThreadedRendezvous: <_MultiThreadedRendezvous of RPC that terminated with:\n",
+            "\tstatus = StatusCode.CANCELLED\n",
+            "\tdetails = \"Multiplexer hanging up\"\n",
+            "\tdebug_error_string = \"UNKNOWN:Error received from peer ipv6:%5B::1%5D:33683 {grpc_message:\"Multiplexer hanging up\", grpc_status:1, created_time:\"2026-02-11T05:23:57.204959578+00:00\"}\"\n",
+            ">\n"
+          ]
+        },
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "18> +I[1, {\"name\": \"Flink\", \"tel\": 124, \"addr\": {\"country\": \"Germany\", \"city\": \"Berlin\"}}]\n",
+            "18> +I[2, {\"name\": \"hello\", \"tel\": 136, \"addr\": {\"country\": \"China\", \"city\": \"Shanghai\"}}]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# UDF 예제: JSON의 tel 값 증가\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "\n",
+        "table = t_env.from_elements(\n",
+        "    elements=[\n",
+        "        (1, '{\"name\": \"Flink\", \"tel\": 123, \"addr\": {\"country\": \"Germany\", \"city\": \"Berlin\"}}'),\n",
+        "        (2, '{\"name\": \"hello\", \"tel\": 135, \"addr\": {\"country\": \"China\", \"city\": \"Shanghai\"}}')\n",
+        "    ],\n",
+        "    schema=['id', 'data']\n",
+        ")\n",
+        "\n",
+        "t_env.create_temporary_table(\n",
+        "    'sink',\n",
+        "    TableDescriptor.for_connector('print')\n",
+        "                   .schema(Schema.new_builder()\n",
+        "                           .column('id', DataTypes.BIGINT())\n",
+        "                           .column('data', DataTypes.STRING())\n",
+        "                           .build())\n",
+        "                   .build()\n",
+        ")\n",
+        "\n",
+        "@udf(result_type=DataTypes.STRING())\n",
+        "def update_tel(data):\n",
+        "    json_data = json.loads(data)\n",
+        "    json_data['tel'] += 1\n",
+        "    return json.dumps(json_data)\n",
+        "\n",
+        "table.select(col('id'), update_tel(col('data'))) \\\n",
+        "     .execute_insert('sink') \\\n",
+        "     .wait()"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "63ece0ce",
+      "metadata": {
+        "id": "63ece0ce"
+      },
+      "source": [
+        "### 4.5 SQL 연산\n",
+        "\n",
+        "Spark SQL 경험이 있으면 바로 사용할 수 있습니다.\n",
+        "Table API와 SQL을 자유롭게 혼합할 수 있습니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "id": "85dbc1c9",
+      "metadata": {
+        "id": "85dbc1c9",
+        "lines_to_next_cell": 1
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+----+----------------------+--------------------------------+\n",
+            "| op |                   id |                           data |\n",
+            "+----+----------------------+--------------------------------+\n",
+            "| +I |                    1 | {\"name\": \"Flink\", \"tel\": 12... |\n",
+            "| +I |                    2 | {\"name\": \"hello\", \"tel\": 13... |\n",
+            "| +I |                    3 | {\"name\": \"world\", \"tel\": 12... |\n",
+            "| +I |                    4 | {\"name\": \"PyFlink\", \"tel\": ... |\n",
+            "+----+----------------------+--------------------------------+\n",
+            "4 rows in set\n"
+          ]
+        }
+      ],
+      "source": [
+        "# SQL 쿼리 사용\n",
+        "# 1. Table API / SQL 실행하는 실행 환경을 스트리밍 모드로 만들겠다\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "\n",
+        "# 2. 테이블 생성\n",
+        "# from_elements() : 리스트 -> Flink Table 객체로 변환\n",
+        "table = t_env.from_elements(\n",
+        "    elements=[\n",
+        "        (1, '{\"name\": \"Flink\", \"tel\": 123, \"addr\": {\"country\": \"Germany\", \"city\": \"Berlin\"}}'),\n",
+        "        (2, '{\"name\": \"hello\", \"tel\": 135, \"addr\": {\"country\": \"China\", \"city\": \"Shanghai\"}}'),\n",
+        "        (3, '{\"name\": \"world\", \"tel\": 124, \"addr\": {\"country\": \"USA\", \"city\": \"NewYork\"}}'),\n",
+        "        (4, '{\"name\": \"PyFlink\", \"tel\": 32, \"addr\": {\"country\": \"China\", \"city\": \"Hangzhou\"}}')\n",
+        "    ],\n",
+        "    schema=['id', 'data']\n",
+        ")\n",
+        "\n",
+        "# sql_query() : SQL 문자열을 실행해서 새로운 table 반환\n",
+        "# execute() : 실제 실행\n",
+        "# print() : 결과 출력\n",
+        "t_env.sql_query(f\"SELECT * FROM {table}\").execute().print()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 59,
+      "id": "e3ab776d",
+      "metadata": {
+        "id": "e3ab776d"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+----+----------------------+--------------------------------+-------------+--------------------------------+\n",
+            "| op |                   id |                           name |         tel |                        country |\n",
+            "+----+----------------------+--------------------------------+-------------+--------------------------------+\n",
+            "| +I |                    1 |                          Flink |         123 |                        Germany |\n",
+            "| +I |                    2 |                          hello |         135 |                          China |\n",
+            "| +I |                    3 |                          world |         124 |                            USA |\n",
+            "| +I |                    4 |                        PyFlink |          32 |                          China |\n",
+            "+----+----------------------+--------------------------------+-------------+--------------------------------+\n",
+            "4 rows in set\n"
+          ]
+        }
+      ],
+      "source": [
+        "# SQL에서 UDTF 사용 (LATERAL TABLE)\n",
+        "@udtf(result_types=[DataTypes.STRING(), DataTypes.INT(), DataTypes.STRING()])\n",
+        "def parse_data(data: str):\n",
+        "    json_data = json.loads(data)\n",
+        "    yield json_data['name'], json_data['tel'], json_data['addr']['country']\n",
+        "\n",
+        "t_env.create_temporary_function('parse_data', parse_data)\n",
+        "\n",
+        "t_env.execute_sql(f\"\"\"\n",
+        "    SELECT id, name, tel, country\n",
+        "    FROM {table}, LATERAL TABLE(parse_data(`data`)) t(name, tel, country)\n",
+        "\"\"\").print()"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "a12562e4",
+      "metadata": {
+        "id": "a12562e4"
+      },
+      "source": [
+        "### 4.6 Table API 윈도우"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 60,
+      "id": "d0df287e",
+      "metadata": {
+        "id": "d0df287e"
+      },
+      "outputs": [],
+      "source": [
+        "# Table API 윈도우용 데이터 준비\n",
+        "window_table_data = [\n",
+        "    (Instant.of_epoch_milli(1000), 'Alice', 110.1),\n",
+        "    (Instant.of_epoch_milli(4000), 'Bob', 30.2),\n",
+        "    (Instant.of_epoch_milli(3000), 'Alice', 20.0),\n",
+        "    (Instant.of_epoch_milli(2000), 'Bob', 53.1),\n",
+        "    (Instant.of_epoch_milli(5000), 'Alice', 13.1),\n",
+        "    (Instant.of_epoch_milli(3000), 'Bob', 3.1),\n",
+        "    (Instant.of_epoch_milli(7000), 'Bob', 16.1),\n",
+        "    (Instant.of_epoch_milli(10000), 'Alice', 20.1)\n",
+        "]"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 61,
+      "id": "a58b3e68",
+      "metadata": {
+        "id": "a58b3e68"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+I[Alice, 130.1, 1970-01-01T00:00:00Z, 1970-01-01T00:00:05Z]\n",
+            "+I[Bob, 86.4, 1970-01-01T00:00:00Z, 1970-01-01T00:00:05Z]\n",
+            "+I[Bob, 16.1, 1970-01-01T00:00:05Z, 1970-01-01T00:00:10Z]\n",
+            "+I[Alice, 13.1, 1970-01-01T00:00:05Z, 1970-01-01T00:00:10Z]\n",
+            "+I[Alice, 20.1, 1970-01-01T00:00:10Z, 1970-01-01T00:00:15Z]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Tumble Window (Table API): 5초 고정 윈도우\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "t_env = StreamTableEnvironment.create(stream_execution_environment=env)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=window_table_data,\n",
+        "    type_info=Types.ROW([Types.INSTANT(), Types.STRING(), Types.FLOAT()])\n",
+        ")\n",
+        "\n",
+        "table = t_env.from_data_stream(\n",
+        "    ds,\n",
+        "    Schema.new_builder()\n",
+        "          .column_by_expression(\"ts\", \"CAST(f0 AS TIMESTAMP(3))\")\n",
+        "          .column(\"f1\", DataTypes.STRING())\n",
+        "          .column(\"f2\", DataTypes.FLOAT())\n",
+        "          .watermark(\"ts\", \"ts - INTERVAL '3' SECOND\")\n",
+        "          .build()\n",
+        ").alias(\"ts\", \"name\", \"price\")\n",
+        "\n",
+        "t_env.create_temporary_table(\n",
+        "    'tumble_sink',\n",
+        "    TableDescriptor.for_connector('print')\n",
+        "                   .schema(Schema.new_builder()\n",
+        "                           .column('name', DataTypes.STRING())\n",
+        "                           .column('total_price', DataTypes.FLOAT())\n",
+        "                           .column('w_start', DataTypes.TIMESTAMP_LTZ())\n",
+        "                           .column('w_end', DataTypes.TIMESTAMP_LTZ())\n",
+        "                           .build())\n",
+        "                   .build()\n",
+        ")\n",
+        "\n",
+        "table.window(Tumble.over(lit(5).seconds).on(col(\"ts\")).alias(\"w\")) \\\n",
+        "     .group_by(col('name'), col('w')) \\\n",
+        "     .select(col('name'), col('price').sum, col(\"w\").start, col(\"w\").end) \\\n",
+        "     .execute_insert('tumble_sink') \\\n",
+        "     .wait()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 62,
+      "id": "ce3e9acd",
+      "metadata": {
+        "id": "ce3e9acd"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+I[Alice, 110.1, 1969-12-31T23:59:58Z, 1970-01-01T00:00:03Z]\n",
+            "+I[Bob, 53.1, 1969-12-31T23:59:58Z, 1970-01-01T00:00:03Z]\n",
+            "+I[Alice, 130.1, 1970-01-01T00:00:00Z, 1970-01-01T00:00:05Z]\n",
+            "+I[Bob, 86.399994, 1970-01-01T00:00:00Z, 1970-01-01T00:00:05Z]\n",
+            "+I[Bob, 86.399994, 1970-01-01T00:00:02Z, 1970-01-01T00:00:07Z]\n",
+            "+I[Alice, 33.1, 1970-01-01T00:00:02Z, 1970-01-01T00:00:07Z]\n",
+            "+I[Alice, 13.1, 1970-01-01T00:00:04Z, 1970-01-01T00:00:09Z]\n",
+            "+I[Bob, 46.300003, 1970-01-01T00:00:04Z, 1970-01-01T00:00:09Z]\n",
+            "+I[Bob, 16.1, 1970-01-01T00:00:06Z, 1970-01-01T00:00:11Z]\n",
+            "+I[Alice, 20.1, 1970-01-01T00:00:06Z, 1970-01-01T00:00:11Z]\n",
+            "+I[Alice, 20.1, 1970-01-01T00:00:08Z, 1970-01-01T00:00:13Z]\n",
+            "+I[Alice, 20.1, 1970-01-01T00:00:10Z, 1970-01-01T00:00:15Z]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Sliding Window (Table API): 크기 5초, 슬라이드 2초\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "t_env = StreamTableEnvironment.create(stream_execution_environment=env)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=window_table_data,\n",
+        "    type_info=Types.ROW([Types.INSTANT(), Types.STRING(), Types.FLOAT()])\n",
+        ")\n",
+        "\n",
+        "table = t_env.from_data_stream(\n",
+        "    ds,\n",
+        "    Schema.new_builder()\n",
+        "          .column_by_expression(\"ts\", \"CAST(f0 AS TIMESTAMP(3))\")\n",
+        "          .column(\"f1\", DataTypes.STRING())\n",
+        "          .column(\"f2\", DataTypes.FLOAT())\n",
+        "          .watermark(\"ts\", \"ts - INTERVAL '3' SECOND\")\n",
+        "          .build()\n",
+        ").alias(\"ts\", \"name\", \"price\")\n",
+        "\n",
+        "t_env.create_temporary_table(\n",
+        "    'slide_sink',\n",
+        "    TableDescriptor.for_connector('print')\n",
+        "                   .schema(Schema.new_builder()\n",
+        "                           .column('name', DataTypes.STRING())\n",
+        "                           .column('total_price', DataTypes.FLOAT())\n",
+        "                           .column('w_start', DataTypes.TIMESTAMP_LTZ())\n",
+        "                           .column('w_end', DataTypes.TIMESTAMP_LTZ())\n",
+        "                           .build())\n",
+        "                   .build()\n",
+        ")\n",
+        "\n",
+        "table.window(Slide.over(lit(5).seconds).every(lit(2).seconds).on(col(\"ts\")).alias(\"w\")) \\\n",
+        "     .group_by(col('name'), col('w')) \\\n",
+        "     .select(col('name'), col('price').sum, col(\"w\").start, col(\"w\").end) \\\n",
+        "     .execute_insert('slide_sink') \\\n",
+        "     .wait()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 63,
+      "id": "971d0788",
+      "metadata": {
+        "id": "971d0788"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+I[Alice, 110.1]\n",
+            "+I[Bob, 53.1]\n",
+            "+I[Alice, 110.1]\n",
+            "+I[Bob, 53.1]\n",
+            "+I[Bob, 53.1]\n",
+            "+I[Alice, 110.1]\n",
+            "+I[Bob, 30.2]\n",
+            "+I[Alice, 20.1]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Over Window (Table API): 행 기반 윈도우 — 이전 2행까지의 max\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "t_env = StreamTableEnvironment.create(stream_execution_environment=env)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=window_table_data,\n",
+        "    type_info=Types.ROW([Types.INSTANT(), Types.STRING(), Types.FLOAT()])\n",
+        ")\n",
+        "\n",
+        "table = t_env.from_data_stream(\n",
+        "    ds,\n",
+        "    Schema.new_builder()\n",
+        "          .column_by_expression(\"ts\", \"CAST(f0 AS TIMESTAMP(3))\")\n",
+        "          .column(\"f1\", DataTypes.STRING())\n",
+        "          .column(\"f2\", DataTypes.FLOAT())\n",
+        "          .watermark(\"ts\", \"ts - INTERVAL '3' SECOND\")\n",
+        "          .build()\n",
+        ").alias(\"ts\", \"name\", \"price\")\n",
+        "\n",
+        "t_env.create_temporary_table(\n",
+        "    'over_sink',\n",
+        "    TableDescriptor.for_connector('print')\n",
+        "                   .schema(Schema.new_builder()\n",
+        "                           .column('name', DataTypes.STRING())\n",
+        "                           .column('max_price', DataTypes.FLOAT())\n",
+        "                           .build())\n",
+        "                   .build()\n",
+        ")\n",
+        "\n",
+        "table.over_window(\n",
+        "    Over.partition_by(col(\"name\"))\n",
+        "        .order_by(col(\"ts\"))\n",
+        "        .preceding(row_interval(2))\n",
+        "        .following(CURRENT_ROW)\n",
+        "        .alias('w')\n",
+        ") \\\n",
+        "     .select(col('name'), col('price').max.over(col('w'))) \\\n",
+        "     .execute_insert('over_sink') \\\n",
+        "     .wait()"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "79432f70",
+      "metadata": {
+        "id": "79432f70"
+      },
+      "source": [
+        "### 4.7 Multi-Sink + Pandas\n",
+        "\n",
+        "**StatementSet**: 하나의 소스 데이터를 여러 싱크로 동시에 출력할 수 있습니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 64,
+      "id": "fa918ce2",
+      "metadata": {
+        "id": "fa918ce2"
+      },
+      "outputs": [
+        {
+          "name": "stderr",
+          "output_type": "stream",
+          "text": [
+            "Exception in thread read_grpc_client_inputs:\n",
+            "Traceback (most recent call last):\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1073, in _bootstrap_inner\n",
+            "    self.run()\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1010, in run\n",
+            "    self._target(*self._args, **self._kwargs)\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 721, in <lambda>\n",
+            "    target=lambda: self._read_inputs(elements_iterator),\n",
+            "                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 704, in _read_inputs\n",
+            "    for elements in elements_iterator:\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 543, in __next__\n",
+            "    return self._next()\n",
+            "           ^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 969, in _next\n",
+            "    raise self\n",
+            "grpc._channel._MultiThreadedRendezvous: <_MultiThreadedRendezvous of RPC that terminated with:\n",
+            "\tstatus = StatusCode.CANCELLED\n",
+            "\tdetails = \"Multiplexer hanging up\"\n",
+            "\tdebug_error_string = \"UNKNOWN:Error received from peer ipv6:%5B::1%5D:44405 {created_time:\"2026-02-11T05:24:08.009045872+00:00\", grpc_status:1, grpc_message:\"Multiplexer hanging up\"}\"\n",
+            ">\n"
+          ]
+        },
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "13> +I[1, Hello]\n",
+            "13> +I[2, World]\n",
+            "13> +I[3, Flink]\n",
+            "13> +I[3, Flink]\n",
+            "13> +I[4, PyFlink]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Multi-Sink 예제: 하나의 소스 → 두 개의 싱크\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "\n",
+        "table = t_env.from_elements(\n",
+        "    elements=[(1, 'Hello'), (2, 'World'), (3, \"Flink\"), (4, \"PyFlink\")],\n",
+        "    schema=['id', 'data']\n",
+        ")\n",
+        "\n",
+        "t_env.execute_sql(\"\"\"\n",
+        "    CREATE TABLE first_sink (\n",
+        "        id BIGINT,\n",
+        "        data VARCHAR\n",
+        "    ) WITH ('connector' = 'print')\n",
+        "\"\"\")\n",
+        "\n",
+        "t_env.execute_sql(\"\"\"\n",
+        "    CREATE TABLE second_sink (\n",
+        "        id BIGINT,\n",
+        "        data VARCHAR\n",
+        "    ) WITH ('connector' = 'print')\n",
+        "\"\"\")\n",
+        "\n",
+        "# StatementSet으로 여러 싱크에 동시 출력\n",
+        "statement_set = t_env.create_statement_set()\n",
+        "\n",
+        "# Sink 1: id <= 3인 데이터\n",
+        "statement_set.add_insert_sql(f\"INSERT INTO first_sink SELECT * FROM {table} WHERE id <= 3\")\n",
+        "\n",
+        "# Sink 2: 'Flink' 포함 데이터\n",
+        "@udf(result_type=DataTypes.BOOLEAN())\n",
+        "def contains_flink(data):\n",
+        "    return \"Flink\" in data\n",
+        "\n",
+        "second_table = table.where(contains_flink(table.data))\n",
+        "statement_set.add_insert(\"second_sink\", second_table)\n",
+        "\n",
+        "statement_set.execute().wait()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 65,
+      "id": "2ea11664",
+      "metadata": {
+        "id": "2ea11664"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "원본 Pandas DataFrame:\n",
+            "          a         b\n",
+            "0  0.500287  0.244131\n",
+            "1  0.203126  0.875233\n",
+            "2  0.425922  0.124446\n",
+            "3  0.232521  0.393878\n",
+            "4  0.968117  0.677180\n",
+            "\n",
+            "Flink를 거쳐 다시 Pandas로:\n",
+            "          a         b\n",
+            "0  0.500287  0.244131\n",
+            "1  0.203126  0.875233\n",
+            "2  0.425922  0.124446\n",
+            "3  0.232521  0.393878\n",
+            "4  0.968117  0.677180\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Pandas DataFrame ↔ Flink Table 변환\n",
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "\n",
+        "t_env = TableEnvironment.create(EnvironmentSettings.in_streaming_mode())\n",
+        "t_env.get_config().set(\"parallelism.default\", \"1\")\n",
+        "\n",
+        "# Pandas DataFrame 생성\n",
+        "pdf = pd.DataFrame(np.random.rand(5, 2), columns=['a', 'b'])\n",
+        "print(\"원본 Pandas DataFrame:\")\n",
+        "print(pdf)\n",
+        "\n",
+        "# Pandas → Flink Table\n",
+        "table = t_env.from_pandas(\n",
+        "    pdf,\n",
+        "    schema=DataTypes.ROW([\n",
+        "        DataTypes.FIELD(\"a\", DataTypes.DOUBLE()),\n",
+        "        DataTypes.FIELD(\"b\", DataTypes.DOUBLE())\n",
+        "    ])\n",
+        ")\n",
+        "\n",
+        "# Flink Table → Pandas\n",
+        "result_pdf = table.to_pandas()\n",
+        "print(\"\\nFlink를 거쳐 다시 Pandas로:\")\n",
+        "print(result_pdf)"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 66,
+      "id": "77f89ec3",
+      "metadata": {
+        "id": "77f89ec3"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "+I[Alice, 65.05, 1970-01-01T00:00:00Z, 1970-01-01T00:00:05Z]\n",
+            "+I[Bob, 28.800001, 1970-01-01T00:00:00Z, 1970-01-01T00:00:05Z]\n",
+            "+I[Bob, 16.1, 1970-01-01T00:00:05Z, 1970-01-01T00:00:10Z]\n",
+            "+I[Alice, 13.1, 1970-01-01T00:00:05Z, 1970-01-01T00:00:10Z]\n",
+            "+I[Alice, 20.1, 1970-01-01T00:00:10Z, 1970-01-01T00:00:15Z]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Pandas UDAF: 윈도우별 평균 계산\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "env.set_parallelism(1)\n",
+        "t_env = StreamTableEnvironment.create(stream_execution_environment=env)\n",
+        "\n",
+        "ds = env.from_collection(\n",
+        "    collection=window_table_data,\n",
+        "    type_info=Types.ROW([Types.INSTANT(), Types.STRING(), Types.FLOAT()])\n",
+        ")\n",
+        "\n",
+        "table = t_env.from_data_stream(\n",
+        "    ds,\n",
+        "    Schema.new_builder()\n",
+        "          .column_by_expression(\"ts\", \"CAST(f0 AS TIMESTAMP_LTZ(3))\")\n",
+        "          .column(\"f1\", DataTypes.STRING())\n",
+        "          .column(\"f2\", DataTypes.FLOAT())\n",
+        "          .watermark(\"ts\", \"ts - INTERVAL '3' SECOND\")\n",
+        "          .build()\n",
+        ").alias(\"ts\", \"name\", \"price\")\n",
+        "\n",
+        "t_env.create_temporary_table(\n",
+        "    'pandas_sink',\n",
+        "    TableDescriptor.for_connector('print')\n",
+        "                   .schema(Schema.new_builder()\n",
+        "                           .column('name', DataTypes.STRING())\n",
+        "                           .column('mean_price', DataTypes.FLOAT())\n",
+        "                           .column('w_start', DataTypes.TIMESTAMP_LTZ())\n",
+        "                           .column('w_end', DataTypes.TIMESTAMP_LTZ())\n",
+        "                           .build())\n",
+        "                   .build()\n",
+        ")\n",
+        "\n",
+        "# Pandas UDAF: Pandas의 mean() 사용\n",
+        "@udaf(result_type=DataTypes.FLOAT(), func_type=\"pandas\")\n",
+        "def mean_udaf(v):\n",
+        "    return v.mean()\n",
+        "\n",
+        "table.window(Tumble.over(lit(5).seconds).on(col(\"ts\")).alias(\"w\")) \\\n",
+        "     .group_by(col('name'), col('w')) \\\n",
+        "     .select(col('name'), mean_udaf(col('price')), col(\"w\").start, col(\"w\").end) \\\n",
+        "     .execute_insert('pandas_sink') \\\n",
+        "     .wait()"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "fe4b621f",
+      "metadata": {
+        "id": "fe4b621f"
+      },
+      "source": [
+        "### 📝 FAQ\n",
+        "\n",
+        "**Q. Table API와 SQL 중 어떤 걸 써야 하나요?**\n",
+        "\n",
+        "> 둘 다 내부적으로 같은 실행 엔진을 사용하므로 성능 차이는 없습니다.\n",
+        "> SQL에 익숙하면 SQL을, 프로그래밍 방식을 선호하면 Table API를 사용하세요.\n",
+        "> 실무에서는 혼합해서 쓰는 경우가 많습니다.\n",
+        "\n",
+        "**Q. Changelog Stream의 -U/+U는 뭔가요?**\n",
+        "\n",
+        "> 스트리밍 `GROUP BY`에서 같은 키의 집계 결과가 변경될 때,\n",
+        "> 이전 결과를 취소(-U)하고 새 결과를 삽입(+U)하는 방식입니다.\n",
+        "> 예: `(\"hello\", 1)` → 새 \"hello\" 도착 → `-U(\"hello\", 1)`, `+U(\"hello\", 2)`\n",
+        "\n",
+        "**Q. Pandas UDAF는 느리지 않나요?**\n",
+        "\n",
+        "> JVM과 Python 간 데이터 전송 오버헤드가 있지만, Apache Arrow를 사용하여\n",
+        "> 직렬화/역직렬화를 최적화합니다. Pandas의 벡터화 연산을 활용할 수 있어\n",
+        "> 행 단위 처리보다 빠른 경우도 있습니다.\n",
+        "\n",
+        "**Q. `execute_insert()` vs `execute()` 차이는?**\n",
+        "\n",
+        "> `execute_insert('sink')`: 결과를 특정 싱크 테이블에 삽입하고 실행합니다.\n",
+        "> `table.execute()`: 결과를 클라이언트로 가져와서 출력합니다 (`.print()` 등).\n",
+        "> 프로덕션에서는 `execute_insert()`를, 디버깅에서는 `.execute().print()`를 사용합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "eb58220c",
+      "metadata": {
+        "id": "eb58220c"
+      },
+      "source": [
+        "### ✅ 퀴즈\n",
+        "\n",
+        "**Q1.** Table API에서 `group_by()`에 대응하는 Spark DataFrame 메서드는?\n",
+        "\n",
+        "- A) `select()`\n",
+        "- B) `groupBy()`\n",
+        "- C) `partition_by()`\n",
+        "- D) `distinct()`\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: B)**\n",
+        "\n",
+        "Flink Table API의 `group_by()`는 Spark DataFrame의 `groupBy()`와 동일한 역할을 합니다.\n",
+        "둘 다 지정된 컬럼을 기준으로 데이터를 그룹화한 뒤 집계 연산을 수행합니다.\n",
+        "\n",
+        "</details>\n",
+        "\n",
+        "---\n",
+        "\n",
+        "**Q2.** UDTF와 UDF의 핵심 차이점은?\n",
+        "\n",
+        "- A) UDTF는 Python 전용, UDF는 Java 전용\n",
+        "- B) UDTF는 1개 입력에서 여러 행을 생성, UDF는 1개 입력에서 1개 값을 반환\n",
+        "- C) UDTF는 배치용, UDF는 스트리밍용\n",
+        "- D) UDTF는 집계 함수, UDF는 변환 함수\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: B)**\n",
+        "\n",
+        "UDF(User Defined Function)는 1:1 변환으로 하나의 입력에서 하나의 값을 반환합니다.\n",
+        "UDTF(User Defined Table Function)는 1:N 변환으로 하나의 입력에서 여러 행을 생성합니다.\n",
+        "DataStream API의 `map` vs `flat_map` 관계와 동일합니다.\n",
+        "\n",
+        "</details>\n",
+        "\n",
+        "---\n",
+        "\n",
+        "**Q3.** StatementSet의 용도로 가장 적절한 것은?\n",
+        "\n",
+        "- A) 여러 소스에서 데이터를 읽기 위해\n",
+        "- B) 하나의 소스 데이터를 여러 싱크에 동시 출력하기 위해\n",
+        "- C) 트랜잭션 처리를 위해\n",
+        "- D) 배치와 스트리밍을 동시 실행하기 위해\n",
+        "\n",
+        "<details>\n",
+        "<summary>정답 확인</summary>\n",
+        "\n",
+        "**정답: B)**\n",
+        "\n",
+        "StatementSet은 하나의 파이프라인에서 여러 INSERT 문을 동시에 실행할 수 있게 해줍니다.\n",
+        "동일한 소스 데이터를 서로 다른 조건으로 필터링하여 각각 다른 싱크에 저장할 때 유용합니다.\n",
+        "\n",
+        "</details>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "73d5a3f1",
+      "metadata": {
+        "id": "73d5a3f1"
+      },
+      "source": [
+        "### 🏋️ 실습\n",
+        "\n",
+        "Table API로 `sample_data`에서 **국가별 최대 tel 값**을 구하고,\n",
+        "SQL로 같은 결과를 만들어 보세요.\n",
+        "\n",
+        "```python\n",
+        "# 힌트 1: Table API\n",
+        "# table.group_by(col('country')).select(col('country'), col('tel').cast(...).max)\n",
+        "\n",
+        "# 힌트 2: SQL\n",
+        "# t_env.sql_query(f\"SELECT ... FROM {table} GROUP BY ...\")\n",
+        "```\n",
+        "\n",
+        "<details>\n",
+        "<summary>모범 답안</summary>\n",
+        "\n",
+        "```python\n",
+        "# Table API\n",
+        "table.group_by(col('country')) \\\n",
+        "     .select(col('country'),\n",
+        "             col('tel').cast(DataTypes.BIGINT()).max.alias('max_tel')) \\\n",
+        "     .execute().print()\n",
+        "\n",
+        "# SQL\n",
+        "t_env.sql_query(f\"\"\"\n",
+        "    SELECT JSON_VALUE(`data`, '$.addr.country') as country,\n",
+        "           MAX(CAST(JSON_VALUE(`data`, '$.tel') AS BIGINT)) as max_tel\n",
+        "    FROM {table}\n",
+        "    GROUP BY JSON_VALUE(`data`, '$.addr.country')\n",
+        "\"\"\").execute().print()\n",
+        "```\n",
+        "\n",
+        "</details>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "98acc9bc",
+      "metadata": {
+        "id": "98acc9bc"
+      },
+      "source": [
+        "**Table API 개념 매핑표:**\n",
+        "\n",
+        "| Flink Table API | Spark DataFrame | 설명 |\n",
+        "|-----------------|-----------------|------|\n",
+        "| `TableEnvironment` | `SparkSession` | 실행 환경 |\n",
+        "| `Table` | `DataFrame` | 테이블 추상화 |\n",
+        "| `create_temporary_table()` | `createOrReplaceTempView()` | 임시 테이블 등록 |\n",
+        "| `from_path()` | `table()` | 테이블 참조 |\n",
+        "| `execute_sql()` | `sql()` | SQL 실행 |\n",
+        "| `@udtf` | `@udf` + `explode` | 테이블 함수 |\n",
+        "| `group_by()` | `groupBy()` | 그룹화 |\n",
+        "| `execute_insert()` | `write.insertInto()` | 결과 저장 |"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "69b11a3d",
+      "metadata": {
+        "id": "69b11a3d"
+      },
+      "source": [
+        "---\n",
+        "## 5. DataStream과 Table API 혼합 사용\n",
+        "\n",
+        "PyFlink에서는 DataStream API와 Table API를 자유롭게 혼합하여 사용할 수 있습니다.\n",
+        "\n",
+        "**혼합 사용 시나리오:**\n",
+        "\n",
+        "| 상황 | 추천 API |\n",
+        "|------|---------|\n",
+        "| SQL로 표현 가능한 집계/조인 | Table API |\n",
+        "| ETL 파이프라인 | Table API |\n",
+        "| 복잡한 이벤트 처리 (CEP) | DataStream API |\n",
+        "| 커스텀 상태 관리 필요 | DataStream API |\n",
+        "| 밀리초 단위 지연시간 요구 | DataStream API |\n",
+        "| 빠른 프로토타이핑 | Table API |\n",
+        "\n",
+        "**실무 팁:** Table API로 데이터를 정제한 뒤,\n",
+        "DataStream API로 세밀한 로직을 구현하는 패턴이 흔합니다."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 67,
+      "id": "87f074d0",
+      "metadata": {
+        "id": "87f074d0"
+      },
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "1> +I[8828122227636467502]\n",
+            "6> +I[1748884498219259495]\n",
+            "7> +I[-3753786784492572021]\n",
+            "3> +I[-1907455819288155062]\n",
+            "10> +I[-601833296558296765]\n",
+            "8> +I[5026942652314736869]\n",
+            "2> +I[-5763115033974670985]\n",
+            "4> +I[-8826528858631339760]\n"
+          ]
+        },
+        {
+          "name": "stderr",
+          "output_type": "stream",
+          "text": [
+            "Exception in thread read_grpc_client_inputs:\n",
+            "Traceback (most recent call last):\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1073, in _bootstrap_inner\n",
+            "    self.run()\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1010, in run\n",
+            "Exception in thread read_grpc_client_inputs:\n",
+            "Traceback (most recent call last):\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1073, in _bootstrap_inner\n",
+            "    self.run()\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1010, in run\n",
+            "    self._target(*self._args, **self._kwargs)\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 721, in <lambda>\n",
+            "    self._target(*self._args, **self._kwargs)\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 721, in <lambda>\n",
+            "Exception in thread read_grpc_client_inputs:\n",
+            "Traceback (most recent call last):\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1073, in _bootstrap_inner\n",
+            "    target=lambda: self._read_inputs(elements_iterator),\n",
+            "                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 704, in _read_inputs\n",
+            "    self.run()\n",
+            "  File \"/usr/lib/python3.12/threading.py\", line 1010, in run\n",
+            "    target=lambda: self._read_inputs(elements_iterator),\n",
+            "                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 704, in _read_inputs\n",
+            "    for elements in elements_iterator:\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 543, in __next__\n",
+            "    self._target(*self._args, **self._kwargs)\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 721, in <lambda>\n",
+            "    return self._next()\n",
+            "           ^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 969, in _next\n",
+            "    for elements in elements_iterator:\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 543, in __next__\n",
+            "    target=lambda: self._read_inputs(elements_iterator),\n",
+            "                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/apache_beam/runners/worker/data_plane.py\", line 704, in _read_inputs\n",
+            "    for elements in elements_iterator:\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 543, in __next__\n",
+            "    raise self\n",
+            "grpc._channel._MultiThreadedRendezvous: <_MultiThreadedRendezvous of RPC that terminated with:\n",
+            "\tstatus = StatusCode.CANCELLED\n",
+            "\tdetails = \"Multiplexer hanging up\"\n",
+            "\tdebug_error_string = \"UNKNOWN:Error received from peer ipv6:%5B::1%5D:37029 {grpc_message:\"Multiplexer hanging up\", grpc_status:1, created_time:\"2026-02-11T05:24:15.276228881+00:00\"}\"\n",
+            ">\n",
+            "    return self._next()\n",
+            "           ^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 969, in _next\n",
+            "    raise self\n",
+            "grpc._channel._MultiThreadedRendezvous: <_MultiThreadedRendezvous of RPC that terminated with:\n",
+            "\tstatus = StatusCode.CANCELLED\n",
+            "\tdetails = \"Multiplexer hanging up\"\n",
+            "\tdebug_error_string = \"UNKNOWN:Error received from peer ipv6:%5B::1%5D:42473 {created_time:\"2026-02-11T05:24:15.308978109+00:00\", grpc_status:1, grpc_message:\"Multiplexer hanging up\"}\"\n",
+            ">\n",
+            "    return self._next()\n",
+            "           ^^^^^^^^^^^^\n",
+            "  File \"/opt/venv/lib/python3.12/site-packages/grpc/_channel.py\", line 969, in _next\n",
+            "    raise self\n",
+            "grpc._channel._MultiThreadedRendezvous: <_MultiThreadedRendezvous of RPC that terminated with:\n",
+            "\tstatus = StatusCode.CANCELLED\n",
+            "\tdetails = \"Multiplexer hanging up\"\n",
+            "\tdebug_error_string = \"UNKNOWN:Error received from peer ipv6:%5B::1%5D:39617 {created_time:\"2026-02-11T05:24:15.310179966+00:00\", grpc_status:1, grpc_message:\"Multiplexer hanging up\"}\"\n",
+            ">\n"
+          ]
+        },
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "9> +I[-7410871195654950137]\n",
+            "5> +I[406811604106862199]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# DataStream ↔ Table 변환 예제\n",
+        "env = StreamExecutionEnvironment.get_execution_environment()\n",
+        "t_env = StreamTableEnvironment.create(stream_execution_environment=env)\n",
+        "\n",
+        "# 1. Table API로 소스 정의 (datagen: 랜덤 데이터 생성)\n",
+        "t_env.create_temporary_table(\n",
+        "    'source',\n",
+        "    TableDescriptor.for_connector('datagen')\n",
+        "                   .schema(Schema.new_builder()\n",
+        "                           .column('id', DataTypes.BIGINT())\n",
+        "                           .column('data', DataTypes.STRING())\n",
+        "                           .build())\n",
+        "                   .option(\"number-of-rows\", \"10\")\n",
+        "                   .build()\n",
+        ")\n",
+        "\n",
+        "t_env.create_temporary_table(\n",
+        "    'mix_sink',\n",
+        "    TableDescriptor.for_connector('print')\n",
+        "                   .schema(Schema.new_builder()\n",
+        "                           .column('result', DataTypes.BIGINT())\n",
+        "                           .build())\n",
+        "                   .build()\n",
+        ")\n",
+        "\n",
+        "@udf(result_type=DataTypes.BIGINT())\n",
+        "def length(data):\n",
+        "    return len(data)\n",
+        "\n",
+        "# 2. Table API 연산: id + length(data) 계산\n",
+        "table = t_env.from_path(\"source\")\n",
+        "table = table.select(col('id'), length(col('data')))\n",
+        "\n",
+        "# 3. Table → DataStream 변환\n",
+        "ds = t_env.to_data_stream(table)\n",
+        "\n",
+        "# 4. DataStream API 연산: 두 값 합산\n",
+        "ds = ds.map(lambda i: i[0] + i[1], output_type=Types.LONG())\n",
+        "\n",
+        "# 5. DataStream → Table 변환 후 출력\n",
+        "table = t_env.from_data_stream(ds, col(\"result\"))\n",
+        "table.execute_insert('mix_sink').wait()"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "53668861",
+      "metadata": {
+        "id": "53668861"
+      },
+      "source": [
+        "### 📝 FAQ\n",
+        "\n",
+        "**Q. 어떤 상황에서 혼합 사용하나요?**\n",
+        "\n",
+        "> 예를 들어, Kafka에서 들어오는 JSON 데이터를 **Table API/SQL**로 파싱하고 필터링한 뒤,\n",
+        "> **DataStream API**로 복잡한 패턴 감지나 커스텀 상태 로직을 구현하는 패턴이 일반적입니다.\n",
+        "> Table API의 편의성과 DataStream API의 유연성을 모두 활용할 수 있습니다.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "### 🏋️ 실습\n",
+        "\n",
+        "Table API로 데이터를 필터링한 후 DataStream으로 변환하여\n",
+        "커스텀 로직을 적용해 보세요.\n",
+        "\n",
+        "```python\n",
+        "# 힌트:\n",
+        "# 1. t_env.from_elements()로 테이블 생성\n",
+        "# 2. table.filter()로 조건 필터링\n",
+        "# 3. t_env.to_data_stream(table)로 DataStream 변환\n",
+        "# 4. ds.map()으로 커스텀 변환 적용\n",
+        "# 5. t_env.from_data_stream(ds)로 다시 테이블 변환 후 출력\n",
+        "```"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "a10ff772",
+      "metadata": {
+        "id": "a10ff772"
+      },
+      "source": [
+        "---\n",
+        "## 6. 커넥터 소개\n",
+        "\n",
+        "PyFlink는 다양한 외부 시스템과의 연동을 위한 커넥터를 제공합니다.\n",
+        "\n",
+        "| 커넥터 | 용도 | 사용 사례 |\n",
+        "|--------|------|----------|\n",
+        "| **Kafka** | 메시지 큐 | 실시간 이벤트 처리, 로그 수집 |\n",
+        "| **Elasticsearch** | 검색 엔진 | 실시간 검색 인덱싱, 모니터링 |\n",
+        "| **JDBC** | 관계형 DB | 참조 데이터 조회, 결과 저장 |\n",
+        "| **FileSystem** | 파일 시스템 | 배치 처리, 로그 아카이빙 |\n",
+        "| **Pulsar** | 메시지 큐 | Kafka 대안, 멀티 테넌시 |\n",
+        "\n",
+        "> 실제 커넥터 사용 시에는 해당 커넥터의 JAR 파일이 필요합니다.\n",
+        "> `env.add_jars(\"file:///path/to/connector.jar\")`로 추가합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "821c8be9",
+      "metadata": {
+        "id": "821c8be9"
+      },
+      "source": [
+        "### Kafka 커넥터 패턴\n",
+        "\n",
+        "**DataStream API 방식:**\n",
+        "\n",
+        "```python\n",
+        "from pyflink.datastream.connectors.kafka import KafkaSource, KafkaSink\n",
+        "\n",
+        "# Source\n",
+        "kafka_source = KafkaSource.builder() \\\n",
+        "    .set_bootstrap_servers(\"localhost:9092\") \\\n",
+        "    .set_topics(\"input-topic\") \\\n",
+        "    .set_group_id(\"flink-consumer-group\") \\\n",
+        "    .set_starting_offsets(KafkaOffsetsInitializer.earliest()) \\\n",
+        "    .set_value_only_deserializer(SimpleStringSchema()) \\\n",
+        "    .build()\n",
+        "\n",
+        "ds = env.from_source(kafka_source, WatermarkStrategy.no_watermarks(), \"Kafka Source\")\n",
+        "```\n",
+        "\n",
+        "**Table API / SQL 방식:**\n",
+        "\n",
+        "```sql\n",
+        "CREATE TABLE kafka_source (\n",
+        "    event_time TIMESTAMP(3),\n",
+        "    user_id STRING,\n",
+        "    action STRING\n",
+        ") WITH (\n",
+        "    'connector' = 'kafka',\n",
+        "    'topic' = 'user-events',\n",
+        "    'properties.bootstrap.servers' = 'localhost:9092',\n",
+        "    'scan.startup.mode' = 'earliest-offset',\n",
+        "    'format' = 'json'\n",
+        ")\n",
+        "```\n",
+        "\n",
+        "> 실제 Kafka 연동 실습은 **stream-lab/** 프로젝트에서 진행합니다.\n",
+        "> stream-lab에서는 Producer → Kafka → Flink → PostgreSQL 전체 파이프라인을 구축합니다."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "faef3ef3",
+      "metadata": {
+        "id": "faef3ef3"
+      },
+      "source": [
+        "---\n",
+        "## 7. 최종 정리\n",
+        "\n",
+        "### DataStream API vs Table API 최종 비교\n",
+        "\n",
+        "| 특성 | DataStream API | Table API |\n",
+        "|------|---------------|----------|\n",
+        "| 추상화 수준 | 저수준 | 고수준 |\n",
+        "| 상태 접근 | 직접 제어 가능 | 자동 관리 |\n",
+        "| 타이머 | 직접 등록 가능 | 불가능 |\n",
+        "| SQL 지원 | 불가능 | 가능 |\n",
+        "| 최적화 | 수동 | 자동 |\n",
+        "| 학습 곡선 | 높음 | 낮음 |\n",
+        "| Spark 대응 | RDD API | DataFrame API |\n",
+        "\n",
+        "**언제 어떤 API를 사용할까?**\n",
+        "\n",
+        "- **Table API**: SQL/관계형 연산, 빠른 개발, 자동 최적화가 필요한 경우\n",
+        "- **DataStream API**: 세밀한 상태 제어, 복잡한 이벤트 처리, 타이머 사용이 필요한 경우\n",
+        "- **혼합 사용**: Table API로 정제 → DataStream API로 세밀한 로직"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "c949ec9a",
+      "metadata": {
+        "id": "c949ec9a"
+      },
+      "source": [
+        "### 다음 단계\n",
+        "\n",
+        "이 교안에서 PyFlink의 기본 API를 학습했습니다.\n",
+        "다음 단계로 **stream-lab** 실습을 진행합니다.\n",
+        "\n",
+        "**stream-lab 실습 내용:**\n",
+        "1. Kafka Producer로 실시간 결제 이벤트 생성\n",
+        "2. Naive Python Consumer vs PyFlink Consumer 비교\n",
+        "3. 윈도우 집계 + PostgreSQL 저장 파이프라인 구축\n",
+        "4. 지연 도착 데이터(Late Data) 처리 전략\n",
+        "\n",
+        "<!-- IMAGE: 전체 학습 로드맵 다이어그램 -->"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "id": "ed7cba82",
+      "metadata": {
+        "id": "ed7cba82"
+      },
+      "source": [
+        "### 참고 자료\n",
+        "\n",
+        "- [PyFlink 공식 문서](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/python/overview/)\n",
+        "- [PyFlink DataStream API 튜토리얼](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/python/datastream_tutorial/)\n",
+        "- [PyFlink Table API 튜토리얼](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/python/table_api_tutorial/)\n",
+        "- [Apache Flink GitHub](https://github.com/apache/flink)"
+      ]
+    }
+  ],
+  "metadata": {
+    "colab": {
+      "provenance": []
+    },
+    "jupytext": {
+      "cell_metadata_filter": "-all",
+      "main_language": "python",
+      "notebook_metadata_filter": "-all"
+    },
+    "kernelspec": {
+      "display_name": "venv (3.12.3)",
+      "language": "python",
+      "name": "python3"
+    },
+    "language_info": {
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "file_extension": ".py",
+      "mimetype": "text/x-python",
+      "name": "python",
+      "nbconvert_exporter": "python",
+      "pygments_lexer": "ipython3",
+      "version": "3.12.3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
