@@ -1,0 +1,31 @@
+services:
+  # JobManager: 클러스터 관리 및 Web UI (8081) 담당
+  jobmanager:
+    image: my-pyflink-image
+    build:
+      context: .
+      dockerfile: Dockerfile.Multi
+    volumes:
+      - ./src:/opt/flink/src
+    ports:
+      - "8082:8081" # Flink Web UI (Day28과 포트 충돌 방지)
+      - "8000:8000" # Jupyter/Notebook용 (필요 시)
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+
+  # TaskManager: 실제 데이터 처리 연산 수행
+  taskmanager:
+    image: my-pyflink-image
+    depends_on:
+      - jobmanager
+    volumes:
+      - ./src:/opt/flink/src
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 2

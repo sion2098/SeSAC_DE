@@ -1,0 +1,56 @@
+# ==========================================
+# [Stage 1] Builder: 공장 (더럽지만 필요한 도구가 다 있음)
+# ==========================================
+FROM flink:latest AS builder
+
+USER root
+
+# 1. 빌드용 중장비 설치 (JDK, GCC, Python Dev)
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-dev \
+    python3-venv \
+    build-essential \
+    default-jdk \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. uv 설치
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# 3. 가상환경 생성 및 PyFlink 설치
+# - 시스템 전체에 깔지 않고 /opt/venv 라는 특정 폴더에 몰아서 설치합니다.
+# - 나중에 이 폴더만 쏙 빼가기 위함입니다.
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# 4. PyFlink 빌드 (여전히 JDK 헤더가 필요함)
+# + Jupyter notebook 관련 패키지 (VS Code 연동용)
+RUN JAVA_HOME=/usr/lib/jvm/default-java \
+    uv pip install apache-flink ipykernel jupyter ipywidgets
+
+# ==========================================
+# [Stage 2] Runner: 쇼룸 (깔끔하게 완성품만 있음)
+# ==========================================
+FROM flink:latest
+
+USER root
+
+# 1. 런타임 필수 요소 설치
+# - GCC나 JDK는 필요 없고, 'Python 실행기(interpreter)'만 있으면 됩니다.
+RUN apt-get update && apt-get install -y \
+    python3 \
+    && ln -s /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Builder 단계에서 '조립이 끝난 라이브러리 폴더'만 복사
+# - /opt/venv 폴더 안에는 이미 C로 컴파일된 PyFlink가 들어있습니다.
+COPY --from=builder /opt/venv /opt/venv
+
+# 3. 환경 변수 설정
+# - 이제 'python'을 치면 /opt/venv/bin/python이 실행되도록 합니다.
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# USER flink
+WORKDIR /opt/flink
